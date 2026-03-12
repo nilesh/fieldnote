@@ -1,308 +1,368 @@
-import { useState } from "react";
-import { Usb, RefreshCw, Download, CheckCircle2, Circle, Loader2 } from "lucide-react";
-import { useNotesStore } from "@/stores/notesStore";
-import { cn, formatDuration, parseHdaFilename } from "@/lib/utils";
+import { useState, useCallback } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { readDir, readFile } from "@tauri-apps/plugin-fs";
 import { invoke } from "@tauri-apps/api/core";
-import type { DeviceFile, Note } from "@/types";
+import { Usb, FolderOpen, RefreshCw, Download, CheckCircle2, AlertCircle } from "lucide-react";
+import { useNotesStore } from "@/stores/notesStore";
+import { insertNote, getNoteBySignature } from "@/lib/db";
+import { parseHdaFilename, formatDuration, cn } from "@/lib/utils";
+import type { DeviceFile, Note, NoteState } from "@/types";
 
-// HiDock P1 USB identifiers
-const HIDOCK_VENDOR_ID = 0x33C3;   // Update with actual VID from device
-const HIDOCK_PRODUCT_ID = 0x0001;  // Update with actual PID from device
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface LocalDeviceFile extends DeviceFile {
+  fullPath: string;
+}
+
+type ImportStatus = "idle" | "importing" | "done" | "error";
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function DevicePage() {
-  const addNote = useNotesStore((s) => s.addNote);
-  const notes = useNotesStore((s) => s.notes);
+  const { addNote } = useNotesStore();
 
-  const [device, setDevice] = useState<USBDevice | null>(null);
-  const [files, setFiles] = useState<DeviceFile[]>([]);
+  const [devicePath, setDevicePath] = useState<string | null>(null);
+  const [files, setFiles] = useState<LocalDeviceFile[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [connecting, setConnecting] = useState(false);
   const [scanning, setScanning] = useState(false);
-  const [importing, setImporting] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResults, setImportResults] = useState<Record<string, ImportStatus>>({});
   const [error, setError] = useState<string | null>(null);
-  const [importedCount, setImportedCount] = useState(0);
 
-  const existingSignatures = new Set(notes.map((n) => n.signature));
-
-  const connectDevice = async () => {
+  // ── Open folder picker ──────────────────────────────────────────────────────
+  const handleSelectFolder = async () => {
     setError(null);
-    setConnecting(true);
-    try {
-      const dev = await navigator.usb.requestDevice({
-        filters: [{ vendorId: HIDOCK_VENDOR_ID }],
-      });
-      await dev.open();
-      setDevice(dev);
-      await scanFiles(dev);
-    } catch (e: unknown) {
-      if (e instanceof Error && e.name !== "NotFoundError") {
-        setError(String(e));
-      }
-    } finally {
-      setConnecting(false);
-    }
+    const chosen = await open({ directory: true, multiple: false, title: "Select HiDock device folder" });
+    if (!chosen || Array.isArray(chosen)) return;
+    setDevicePath(chosen);
+    await scanFolder(chosen);
   };
 
-  const scanFiles = async (dev: USBDevice) => {
+  // ── Scan selected folder for .hda files ────────────────────────────────────
+  const scanFolder = useCallback(async (folderPath: string) => {
     setScanning(true);
+    setFiles([]);
+    setSelected(new Set());
+    setImportResults({});
     setError(null);
     try {
-      // Read directory listing from device
-      // NOTE: The exact USB protocol for HiDock P1 needs to be reverse-engineered.
-      // The device likely uses USB Mass Storage (MSC) or a custom protocol.
-      // For now this is a placeholder that reads using MTP-like commands.
-      const discovered = await readDeviceFiles(dev);
-      // Mark already imported files
-      const withStatus = discovered.map((f) => ({
-        ...f,
-        alreadyImported: f.signature ? existingSignatures.has(f.signature) : false,
-      }));
-      setFiles(withStatus);
-    } catch (e) {
-      setError(`Failed to scan device: ${e}`);
+      const entries = await readDir(folderPath);
+      const hdaEntries = entries.filter(
+        (e) => e.name && e.name.toLowerCase().endsWith(".hda")
+      );
+
+      const deviceFiles: LocalDeviceFile[] = await Promise.all(
+        hdaEntries.map(async (entry) => {
+          const fullPath = `${folderPath}/${entry.name!}`;
+          const parsed = parseHdaFilename(entry.name!);
+          // Use filename as a cheap proxy for dedup check during scan;
+          // real MD5 is computed only on import.
+          const existing = await getNoteBySignature(entry.name!).catch(() => null);
+          return {
+            name: entry.name!,
+            fullPath,
+            size: 0,
+            signature: entry.name!,
+            durationMs: parsed?.durationMs ?? 0,
+            recordedAt: parsed?.recordedAt ?? Date.now(),
+            alreadyImported: !!existing,
+          } satisfies LocalDeviceFile;
+        })
+      );
+
+      deviceFiles.sort((a, b) => b.recordedAt - a.recordedAt);
+      setFiles(deviceFiles);
+
+      // Auto-select files not yet imported
+      const newFiles = deviceFiles.filter((f) => !f.alreadyImported).map((f) => f.name);
+      setSelected(new Set(newFiles));
+    } catch (err) {
+      setError(`Failed to read folder: ${err}`);
     } finally {
       setScanning(false);
     }
-  };
+  }, []);
 
-  const toggleSelect = (filename: string) => {
+  const handleRefresh = () => devicePath && scanFolder(devicePath);
+
+  // ── Selection helpers ───────────────────────────────────────────────────────
+  const toggleFile = (name: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(filename)) next.delete(filename);
-      else next.add(filename);
+      next.has(name) ? next.delete(name) : next.add(name);
       return next;
     });
-  };
 
-  const selectAll = () => {
-    const importable = files.filter((f) => !f.alreadyImported).map((f) => f.name);
-    setSelected(new Set(importable));
-  };
+  const selectNew = () =>
+    setSelected(new Set(files.filter((f) => !f.alreadyImported).map((f) => f.name)));
+  const selectAll = () => setSelected(new Set(files.map((f) => f.name)));
+  const clearAll = () => setSelected(new Set());
 
-  const importSelected = async () => {
-    if (!device) return;
-    setImportedCount(0);
-    for (const filename of selected) {
-      const file = files.find((f) => f.name === filename);
-      if (!file) continue;
-      setImporting(filename);
+  // ── Import ──────────────────────────────────────────────────────────────────
+  const handleImport = async () => {
+    if (selected.size === 0) return;
+    setImporting(true);
+
+    const toImport = files.filter((f) => selected.has(f.name));
+
+    for (const file of toImport) {
+      setImportResults((prev) => ({ ...prev, [file.name]: "importing" }));
       try {
-        const data = await readFileFromDevice(device, filename);
+        // 1. Read raw bytes
+        const data = await readFile(file.fullPath);
+
+        // 2. Compute MD5 for dedup
         const signature: string = await invoke("compute_md5", { data: Array.from(data) });
+
+        // 3. Check by real MD5 — skip if already imported
+        const existing = await getNoteBySignature(signature).catch(() => null);
+        if (existing) {
+          setImportResults((prev) => ({ ...prev, [file.name]: "done" }));
+          continue;
+        }
+
+        // 4. Save to app data dir
         const savedPath: string = await invoke("save_recording", {
-          filename,
+          filename: file.name,
           data: Array.from(data),
         });
-        const recordedAt = parseHdaFilename(filename)?.getTime() ?? null;
-        await addNote({
-          filename,
+
+        // 5. Parse filename metadata
+        const parsed = parseHdaFilename(file.name);
+
+        // 6. Insert into DB
+        const note: Note = {
+          id: crypto.randomUUID(),
+          filename: file.name,
           filePath: savedPath,
           signature,
-          title: null,
-          durationMs: file.durationMs,
+          title: parsed?.title ?? file.name.replace(".hda", ""),
+          durationMs: parsed?.durationMs ?? 0,
           createdAt: Date.now(),
-          recordedAt,
+          recordedAt: parsed?.recordedAt ?? Date.now(),
           language: null,
-          state: "imported",
+          state: "imported" as NoteState,
           hinotesId: null,
           folderId: null,
           tags: [],
-        });
-        setImportedCount((c) => c + 1);
-        setFiles((prev) =>
-          prev.map((f) => (f.name === filename ? { ...f, alreadyImported: true } : f))
-        );
-      } catch (e) {
-        setError(`Failed to import ${filename}: ${e}`);
+        };
+
+        await insertNote(note);
+        addNote(note);
+
+        setImportResults((prev) => ({ ...prev, [file.name]: "done" }));
+      } catch (err) {
+        console.error("Import failed for", file.name, err);
+        setImportResults((prev) => ({ ...prev, [file.name]: "error" }));
       }
     }
-    setImporting(null);
-    setSelected(new Set());
+
+    setImporting(false);
+    if (devicePath) await scanFolder(devicePath);
   };
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+  const selectedCount = selected.size;
+  const newCount = files.filter((f) => !f.alreadyImported).length;
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-3 border-b border-border px-6 py-4">
+        <Usb className="h-5 w-5 text-muted-foreground" />
         <h1 className="text-lg font-semibold">Device</h1>
-        {device && (
-          <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/40 dark:text-green-300">
-            Connected
-          </span>
-        )}
-        <div className="ml-auto flex gap-2">
-          {device && (
+
+        {devicePath && (
+          <>
+            <span
+              className="ml-1 max-w-xs truncate text-sm text-muted-foreground"
+              title={devicePath}
+            >
+              {devicePath}
+            </span>
             <button
-              onClick={() => scanFiles(device)}
+              onClick={handleRefresh}
               disabled={scanning}
-              className="flex items-center gap-1.5 rounded-md bg-secondary px-3 py-1.5 text-sm hover:bg-secondary/80 disabled:opacity-50"
+              className="ml-auto rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
+              title="Refresh"
             >
               <RefreshCw className={cn("h-4 w-4", scanning && "animate-spin")} />
-              Refresh
             </button>
-          )}
-          {!device && (
-            <button
-              onClick={connectDevice}
-              disabled={connecting}
-              className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Usb className="h-4 w-4" />}
-              Connect Device
-            </button>
-          )}
-        </div>
+          </>
+        )}
+
+        {!devicePath && (
+          <button
+            onClick={handleSelectFolder}
+            className="ml-auto flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            <FolderOpen className="h-4 w-4" />
+            Select device folder
+          </button>
+        )}
       </div>
 
+      {/* Error banner */}
       {error && (
-        <div className="border-b border-destructive/30 bg-destructive/10 px-6 py-2 text-sm text-destructive">
+        <div className="mx-6 mt-4 flex items-center gap-2 rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4 shrink-0" />
           {error}
         </div>
       )}
 
-      {/* Content */}
-      {!device ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4">
-          <div className="rounded-full bg-secondary p-6">
-            <Usb className="h-12 w-12 text-muted-foreground" />
+      {/* Not connected */}
+      {!devicePath && (
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
+          <div className="rounded-full bg-secondary p-5">
+            <Usb className="h-8 w-8 text-muted-foreground" />
           </div>
-          <div className="text-center">
-            <p className="text-lg font-medium">No device connected</p>
+          <div>
+            <p className="font-medium">No device selected</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Connect your HiDock P1 via USB, then click Connect Device
+              Connect your HiDock P1 via USB — it mounts as a drive in Finder.
+              <br />
+              Then select its folder (usually under{" "}
+              <code className="rounded bg-secondary px-1">/Volumes/</code>).
             </p>
           </div>
+          <button
+            onClick={handleSelectFolder}
+            className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            <FolderOpen className="h-4 w-4" />
+            Select device folder
+          </button>
         </div>
-      ) : (
+      )}
+
+      {/* File list */}
+      {devicePath && (
         <div className="flex flex-1 flex-col overflow-hidden">
           {/* Toolbar */}
           {files.length > 0 && (
-            <div className="flex items-center gap-3 border-b border-border px-6 py-3">
-              <button onClick={selectAll} className="text-sm text-primary hover:underline">
-                Select new
-              </button>
-              <span className="text-xs text-muted-foreground">
-                {selected.size} selected · {files.filter((f) => !f.alreadyImported).length} new
+            <div className="flex items-center gap-3 border-b border-border px-6 py-2">
+              <span className="text-sm text-muted-foreground">
+                {files.length} recording{files.length !== 1 ? "s" : ""} — {newCount} new
               </span>
-              <div className="ml-auto">
-                <button
-                  onClick={importSelected}
-                  disabled={selected.size === 0 || !!importing}
-                  className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {importing ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4" />
-                  )}
-                  Import {selected.size > 0 ? `(${selected.size})` : ""}
+              <div className="ml-auto flex items-center gap-2">
+                <button onClick={selectNew} className="text-xs text-primary hover:underline">
+                  Select new
+                </button>
+                <span className="text-muted-foreground">·</span>
+                <button onClick={selectAll} className="text-xs text-primary hover:underline">
+                  All
+                </button>
+                <span className="text-muted-foreground">·</span>
+                <button onClick={clearAll} className="text-xs text-primary hover:underline">
+                  None
                 </button>
               </div>
+              <button
+                onClick={handleImport}
+                disabled={selectedCount === 0 || importing}
+                className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+              >
+                <Download className="h-4 w-4" />
+                {importing
+                  ? "Importing…"
+                  : `Import${selectedCount > 0 ? ` ${selectedCount}` : ""}`}
+              </button>
             </div>
           )}
 
-          {/* File list */}
           <div className="flex-1 overflow-y-auto">
             {scanning ? (
-              <div className="flex items-center justify-center py-24">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <div className="flex h-full items-center justify-center">
+                <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
             ) : files.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-24 text-center">
-                <p className="text-muted-foreground">No recordings found on device</p>
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+                <p className="font-medium">No recordings found</p>
+                <p className="text-sm text-muted-foreground">
+                  No <code>.hda</code> files in that folder. Make sure you selected
+                  the right drive.
+                </p>
+                <button
+                  onClick={handleSelectFolder}
+                  className="mt-2 text-sm text-primary hover:underline"
+                >
+                  Choose a different folder
+                </button>
               </div>
             ) : (
-              <div className="divide-y divide-border">
-                {files.map((file) => (
-                  <FileRow
-                    key={file.name}
-                    file={file}
-                    selected={selected.has(file.name)}
-                    importing={importing === file.name}
-                    onToggle={() => toggleSelect(file.name)}
-                  />
-                ))}
-              </div>
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 border-b border-border bg-background">
+                  <tr className="text-left text-xs font-medium text-muted-foreground">
+                    <th className="w-10 px-4 py-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedCount === files.length && files.length > 0}
+                        onChange={(e) => (e.target.checked ? selectAll() : clearAll())}
+                        className="accent-primary"
+                      />
+                    </th>
+                    <th className="py-2 pr-4">Filename</th>
+                    <th className="py-2 pr-4">Recorded</th>
+                    <th className="py-2 pr-4">Duration</th>
+                    <th className="py-2 pr-4">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {files.map((file) => {
+                    const importStatus = importResults[file.name];
+                    const isDone = importStatus === "done" || file.alreadyImported;
+                    return (
+                      <tr
+                        key={file.name}
+                        className={cn(
+                          "transition-colors hover:bg-secondary/50",
+                          selected.has(file.name) && "bg-accent/30"
+                        )}
+                        onClick={() => !isDone && toggleFile(file.name)}
+                      >
+                        <td className="px-4 py-2.5">
+                          <input
+                            type="checkbox"
+                            checked={selected.has(file.name)}
+                            disabled={isDone}
+                            onChange={() => toggleFile(file.name)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="accent-primary"
+                          />
+                        </td>
+                        <td className="py-2.5 pr-4 font-mono text-xs">{file.name}</td>
+                        <td className="py-2.5 pr-4 text-muted-foreground">
+                          {new Date(file.recordedAt).toLocaleString()}
+                        </td>
+                        <td className="py-2.5 pr-4 text-muted-foreground">
+                          {file.durationMs ? formatDuration(file.durationMs) : "—"}
+                        </td>
+                        <td className="py-2.5 pr-4">
+                          {importStatus === "importing" ? (
+                            <span className="flex items-center gap-1 text-xs text-primary">
+                              <RefreshCw className="h-3 w-3 animate-spin" /> Importing…
+                            </span>
+                          ) : isDone ? (
+                            <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+                              <CheckCircle2 className="h-3 w-3" /> Imported
+                            </span>
+                          ) : importStatus === "error" ? (
+                            <span className="flex items-center gap-1 text-xs text-destructive">
+                              <AlertCircle className="h-3 w-3" /> Error
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">New</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             )}
           </div>
-
-          {importedCount > 0 && (
-            <div className="border-t border-border bg-green-50 px-6 py-2 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-300">
-              {importedCount} recording{importedCount > 1 ? "s" : ""} imported successfully
-            </div>
-          )}
         </div>
       )}
     </div>
   );
-}
-
-function FileRow({
-  file,
-  selected,
-  importing,
-  onToggle,
-}: {
-  file: DeviceFile;
-  selected: boolean;
-  importing: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-4 px-6 py-3 transition-colors",
-        !file.alreadyImported && "cursor-pointer hover:bg-secondary/40",
-        selected && "bg-accent/50"
-      )}
-      onClick={() => !file.alreadyImported && onToggle()}
-    >
-      <div className="shrink-0">
-        {importing ? (
-          <Loader2 className="h-5 w-5 animate-spin text-primary" />
-        ) : file.alreadyImported ? (
-          <CheckCircle2 className="h-5 w-5 text-green-500" />
-        ) : (
-          <div className={cn(
-            "flex h-5 w-5 items-center justify-center rounded-full border-2",
-            selected ? "border-primary bg-primary" : "border-border"
-          )}>
-            {selected && <div className="h-2 w-2 rounded-full bg-white" />}
-          </div>
-        )}
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="truncate text-sm font-medium">{file.name}</p>
-        {file.recordedAt && (
-          <p className="text-xs text-muted-foreground">{file.recordedAt}</p>
-        )}
-      </div>
-      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-        {file.durationMs && <span>{formatDuration(file.durationMs)}</span>}
-        {file.alreadyImported && (
-          <span className="rounded-full bg-secondary px-2 py-0.5">Imported</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Device USB protocol stubs ────────────────────────────────────────────────
-// These need to be implemented based on HiDock P1's USB protocol.
-// The device likely uses USB Mass Storage (UMS) class, which means
-// we may be able to access it as a filesystem via the File System Access API
-// or through Tauri's fs plugin once mounted.
-
-async function readDeviceFiles(_dev: USBDevice): Promise<DeviceFile[]> {
-  // TODO: Implement actual USB protocol
-  // Option 1: If device uses Mass Storage, read as filesystem
-  // Option 2: Use custom HiDock protocol commands
-  // For now returns empty — actual implementation pending USB protocol discovery
-  console.warn("USB file listing not yet implemented — needs protocol discovery");
-  return [];
-}
-
-async function readFileFromDevice(_dev: USBDevice, _filename: string): Promise<Uint8Array> {
-  // TODO: Implement actual file read via USB
-  throw new Error("USB file reading not yet implemented");
 }
