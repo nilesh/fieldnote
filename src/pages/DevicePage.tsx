@@ -227,10 +227,10 @@ export default function DevicePage() {
             {error.startsWith("EXCLUSIVE_ACCESS") ? (
               <>
                 <p className="mt-0.5 text-xs opacity-80">
-                  Another app has exclusive access to the USB device.
+                  macOS is blocking exclusive USB access (accessoryd or a browser may be holding the device).
                 </p>
                 <p className="mt-1 text-xs opacity-70">
-                  Quit your browser completely (⌘Q Chrome/Safari/Arc), unplug the device, plug it back in, then try again.
+                  Unplug the device, wait 2 seconds, plug it back in, and try again. If that fails, quit your browser (⌘Q) first.
                 </p>
               </>
             ) : (

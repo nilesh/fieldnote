@@ -135,17 +135,41 @@ pub struct UsbSession {
 
 impl UsbSession {
     /// Find and open a HiDock device. Returns Err if none found.
-    pub fn open() -> Result<Self, String> {
+    ///
+    /// Retries up to 5 times with a short delay to handle the window where
+    /// macOS `accessoryd` briefly holds exclusive access for MFi authentication.
+    pub async fn open() -> Result<Self, String> {
+        const MAX_ATTEMPTS: u32 = 5;
+        const RETRY_DELAY_MS: u64 = 400;
+
+        let mut last_err = String::new();
+        for attempt in 0..MAX_ATTEMPTS {
+            match Self::try_open() {
+                Ok(session) => return Ok(session),
+                Err(e) if e.starts_with("EXCLUSIVE_ACCESS") => {
+                    last_err = e;
+                    if attempt + 1 < MAX_ATTEMPTS {
+                        tokio::time::sleep(std::time::Duration::from_millis(RETRY_DELAY_MS)).await;
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Err(last_err)
+    }
+
+    /// Single attempt to find and open the device.
+    fn try_open() -> Result<Self, String> {
         let dev_info = nusb::list_devices()
             .map_err(|e| e.to_string())?
             .find(|d| is_hidock(d.vendor_id(), d.product_id()))
-            .ok_or_else(|| "HiDock device not found. Make sure it is connected via USB and the HiNotes web app is closed.".to_string())?;
+            .ok_or_else(|| "HiDock device not found. Make sure it is connected via USB.".to_string())?;
 
         let model = pid_to_model(dev_info.product_id()).to_string();
         let device = dev_info.open()
-            .map_err(|e| format!("EXCLUSIVE_ACCESS: Cannot open USB device ({e}). Quit your browser completely (Cmd+Q) and replug the device."))?;
+            .map_err(|e| format!("EXCLUSIVE_ACCESS: Cannot open USB device ({e})."))?;
         let iface  = device.claim_interface(0)
-            .map_err(|e| format!("EXCLUSIVE_ACCESS: Cannot claim USB interface ({e}). Quit your browser completely (Cmd+Q) and replug the device."))?;
+            .map_err(|e| format!("EXCLUSIVE_ACCESS: Cannot claim USB interface ({e})."))?;
 
         Ok(Self { iface, seq: 0, rx_buf: Vec::new(), model })
     }

@@ -44,14 +44,14 @@ pub fn get_app_data_dir(app: AppHandle) -> Result<String, String> {
 /// Check whether a HiDock device is connected and return its basic info.
 #[tauri::command]
 pub async fn usb_get_device_info() -> Result<UsbDeviceInfo, String> {
-    let mut session = UsbSession::open()?;
+    let mut session = UsbSession::open().await?;
     session.get_device_info().await
 }
 
 /// List all .hda / .wav files on the connected HiDock device.
 #[tauri::command]
 pub async fn usb_list_files() -> Result<Vec<FileEntry>, String> {
-    let mut session = UsbSession::open()?;
+    let mut session = UsbSession::open().await?;
     session.list_files().await
 }
 
@@ -59,13 +59,13 @@ pub async fn usb_list_files() -> Result<Vec<FileEntry>, String> {
 /// `length` must match the `size` field returned by `usb_list_files`.
 #[tauri::command]
 pub async fn usb_get_file(name: String, length: u32) -> Result<Vec<u8>, String> {
-    let mut session = UsbSession::open()?;
+    let mut session = UsbSession::open().await?;
     session.get_file(&name, length).await
 }
 
 /// Delete a file from the connected HiDock device.
 #[tauri::command]
 pub async fn usb_delete_file(name: String) -> Result<String, String> {
-    let mut session = UsbSession::open()?;
+    let mut session = UsbSession::open().await?;
     session.delete_file(&name).await
 }
