@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useLocation } from "react-router-dom";
+import { Outlet, NavLink } from "react-router-dom";
 import { FileText, Usb, Settings, Mic } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNotesStore } from "@/stores/notesStore";
@@ -11,8 +11,6 @@ const nav = [
 
 export default function Layout() {
   const notes = useNotesStore((s) => s.notes);
-  const location = useLocation();
-
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Sidebar */}

@@ -21,7 +21,7 @@ export async function transcribeAudio(
   filename: string,
   language?: string
 ): Promise<WhisperSegment[]> {
-  const blob = new Blob([audioData], { type: "audio/mpeg" });
+  const blob = new Blob([audioData.buffer as ArrayBuffer], { type: "audio/mpeg" });
   const form = new FormData();
   form.append("file", blob, filename.endsWith(".hda") ? filename.replace(".hda", ".mp3") : filename);
   form.append("model", "whisper-1");

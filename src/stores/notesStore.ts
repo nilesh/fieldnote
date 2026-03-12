@@ -20,7 +20,7 @@ interface NotesState {
   setSummary: (summary: Omit<Summary, "id">) => Promise<void>;
 }
 
-export const useNotesStore = create<NotesState>((set, get) => ({
+export const useNotesStore = create<NotesState>((set, _get) => ({
   notes: [],
   activeNoteId: null,
   transcriptions: {},

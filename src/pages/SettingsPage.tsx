@@ -74,7 +74,7 @@ export default function SettingsPage() {
             <Field label="Transcription Model">
               <select
                 value={form.transcriptionModel}
-                onChange={(e) => set("transcriptionModel", e.target.value)}
+                onChange={(e) => set("transcriptionModel", e.target.value as import("@/types").TranscriptionModel)}
                 className="input-base"
               >
                 <option value="whisper-1">whisper-1</option>
@@ -85,7 +85,7 @@ export default function SettingsPage() {
               <input
                 type="text"
                 value={form.defaultLanguage ?? ""}
-                onChange={(e) => set("defaultLanguage", e.target.value || null)}
+                onChange={(e) => set("defaultLanguage", (e.target.value || null) as string)}
                 placeholder="e.g. en, fr, es (leave blank for auto-detect)"
                 className="input-base"
               />
@@ -149,7 +149,7 @@ export default function SettingsPage() {
               {form.defaultSummaryProvider === "openai" ? (
                 <select
                   value={form.defaultSummaryModel}
-                  onChange={(e) => set("defaultSummaryModel", e.target.value)}
+                  onChange={(e) => set("defaultSummaryModel", e.target.value as import("@/types").SummaryModel)}
                   className="input-base"
                 >
                   <option value="gpt-4o">gpt-4o</option>
@@ -159,7 +159,7 @@ export default function SettingsPage() {
               ) : (
                 <select
                   value={form.defaultSummaryModel}
-                  onChange={(e) => set("defaultSummaryModel", e.target.value)}
+                  onChange={(e) => set("defaultSummaryModel", e.target.value as import("@/types").SummaryModel)}
                   className="input-base"
                 >
                   <option value="claude-opus-4-6">claude-opus-4-6</option>

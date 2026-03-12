@@ -190,7 +190,7 @@ export async function uploadDeviceFile(
   data: Uint8Array
 ): Promise<void> {
   const formData = new FormData();
-  formData.append("file", new Blob([data], { type: "application/octet-stream" }), filename);
+  formData.append("file", new Blob([data.buffer as ArrayBuffer], { type: "application/octet-stream" }), filename);
 
   const resp = await fetch(`${BASE_URL}/v2/device/file/carry`, {
     method: "POST",
@@ -213,6 +213,6 @@ export async function getDeviceStatus(token: string, deviceSn: string) {
 }
 
 // Audio stream URL (no auth needed once you have the URL)
-export function getAudioStreamUrl(token: string, noteId: string): string {
+export function getAudioStreamUrl(_token: string, noteId: string): string {
   return `${BASE_URL}/v2/note/audio/stream?noteId=${noteId}`;
 }

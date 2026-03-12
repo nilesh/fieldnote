@@ -2,6 +2,7 @@ use tauri::Manager;
 
 mod commands;
 mod db;
+mod usb;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -16,6 +17,10 @@ pub fn run() {
             commands::compute_md5,
             commands::save_recording,
             commands::get_app_data_dir,
+            commands::usb_get_device_info,
+            commands::usb_list_files,
+            commands::usb_get_file,
+            commands::usb_delete_file,
         ])
         .setup(|app| {
             // Ensure app data directory exists

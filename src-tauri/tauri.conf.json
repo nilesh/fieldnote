@@ -33,16 +33,10 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "entitlements": "entitlements.plist"
+    }
   },
-  "plugins": {
-    "http": {
-      "danger-allow-any-url": true
-    },
-    "sql": {},
-    "fs": {
-      "scope": ["$APPDATA/*", "$DOCUMENT/*", "$HOME/.dock-notes/*"]
-    },
-    "store": {}
-  }
+  "plugins": {}
 }
