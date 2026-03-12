@@ -142,9 +142,10 @@ impl UsbSession {
             .ok_or_else(|| "HiDock device not found. Make sure it is connected via USB and the HiNotes web app is closed.".to_string())?;
 
         let model = pid_to_model(dev_info.product_id()).to_string();
-        let device = dev_info.open().map_err(|e| format!("Cannot open USB device: {e}"))?;
+        let device = dev_info.open()
+            .map_err(|e| format!("EXCLUSIVE_ACCESS: Cannot open USB device ({e}). Quit your browser completely (Cmd+Q) and replug the device."))?;
         let iface  = device.claim_interface(0)
-            .map_err(|e| format!("Cannot claim USB interface (is another app using the device?): {e}"))?;
+            .map_err(|e| format!("EXCLUSIVE_ACCESS: Cannot claim USB interface ({e}). Quit your browser completely (Cmd+Q) and replug the device."))?;
 
         Ok(Self { iface, seq: 0, rx_buf: Vec::new(), model })
     }
