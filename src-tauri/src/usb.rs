@@ -163,9 +163,19 @@ impl UsbSession {
             // on Linux it detaches the usbfs driver if attached.
             let _ = handle.detach_kernel_driver(0);
 
+            // Match the WebUSB setup: selectConfiguration(1), claimInterface(0),
+            // selectAlternateInterface(0, 0). set_active_configuration may fail
+            // if already set — that's fine.
+            let _ = handle.set_active_configuration(1);
+
             handle
                 .claim_interface(0)
                 .map_err(|e| format!("EXCLUSIVE_ACCESS: Cannot claim USB interface ({e})."))?;
+
+            // This arms the bulk endpoints on the device.
+            handle
+                .set_alternate_setting(0, 0)
+                .map_err(|e| format!("Cannot set alternate interface: {e}"))?;
 
             return Ok(Self { handle, seq: 0, rx_buf: Vec::new(), model });
         }
