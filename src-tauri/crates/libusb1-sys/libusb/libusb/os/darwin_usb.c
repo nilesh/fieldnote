@@ -1806,9 +1806,10 @@ static int darwin_claim_interface(struct libusb_device_handle *dev_handle, uint8
   }
 
   /* claim the interface — use OpenSeize to take it from accessoryd (MFi daemon) */
+  usbi_info (ctx, "PATCHED: calling USBInterfaceOpenSeize instead of USBInterfaceOpen");
   kresult = (*IOINTERFACE(cInterface))->USBInterfaceOpenSeize(IOINTERFACE(cInterface));
   if (kresult != kIOReturnSuccess) {
-    usbi_info (ctx, "USBInterfaceOpenSeize: %s", darwin_error_str(kresult));
+    usbi_info (ctx, "USBInterfaceOpenSeize failed: %s (kresult=0x%08x)", darwin_error_str(kresult), kresult);
     return darwin_to_libusb (kresult);
   }
 

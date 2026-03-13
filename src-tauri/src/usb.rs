@@ -22,6 +22,50 @@
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
+/// Query ioreg to find which process holds the USB interface exclusively.
+/// Returns e.g. Some("Arc") if another app has the device claimed.
+#[cfg(target_os = "macos")]
+fn find_usb_exclusive_owner(vid: u16, pid: u16) -> Option<String> {
+    let output = std::process::Command::new("ioreg")
+        .args(["-r", "-c", "IOUSBHostInterface", "-l"])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+
+    // Find interface blocks belonging to our device (by idVendor/idProduct)
+    let vid_needle = format!("\"idVendor\" = {}", vid);
+    let pid_needle = format!("\"idProduct\" = {}", pid);
+    let exe = std::env::current_exe().ok()?;
+    let self_name = exe.file_name()?.to_str()?;
+
+    for block in text.split("+-o ") {
+        if !block.contains(&vid_needle) || !block.contains(&pid_needle) {
+            continue;
+        }
+        // Look for UsbExclusiveOwner
+        for line in block.lines() {
+            if let Some(rest) = line.strip_suffix("\"") {
+                if let Some(idx) = rest.find("\"UsbExclusiveOwner\" = \"") {
+                    let val = &rest[idx + "\"UsbExclusiveOwner\" = \"".len()..];
+                    // Format: "pid NNNNN, ProcessName"
+                    if let Some(comma_pos) = val.find(", ") {
+                        let proc_name = &val[comma_pos + 2..];
+                        if proc_name != self_name && proc_name != "accessoryd" {
+                            return Some(proc_name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(target_os = "macos"))]
+fn find_usb_exclusive_owner(_vid: u16, _pid: u16) -> Option<String> {
+    None
+}
+
 // ─── Endpoint addresses ───────────────────────────────────────────────────────
 const EP_OUT: u8 = 0x01;
 const EP_IN:  u8 = 0x82;
@@ -32,6 +76,7 @@ const CMD_QUERY_FILE_COUNT:  u16 = 6;
 const CMD_QUERY_FILE_LIST:   u16 = 4;
 const CMD_TRANSFER_FILE:     u16 = 5;
 const CMD_DELETE_FILE:       u16 = 7;
+const CMD_GET_FILE_BLOCK:    u16 = 13;
 
 // ─── Known VIDs / PIDs ────────────────────────────────────────────────────────
 const VID_HIDOCK:  u16 = 0x10D6;
@@ -197,11 +242,20 @@ impl UsbSession {
 
             // On macOS, our patched libusb uses USBInterfaceOpenSeize
             // which forcefully takes the interface from accessoryd.
-            handle.claim_interface(target_iface).map_err(|e| format!(
-                "USB_CLAIM_FAILED: claim_interface({target_iface}) returned: {e}. \
-                 Device interfaces: [{}]",
-                iface_debug.join("; ")
-            ))?;
+            handle.claim_interface(target_iface).map_err(|e| {
+                // Check ioreg for the process holding the interface
+                let owner = find_usb_exclusive_owner(vid, pid);
+                let hint = if let Some(ref proc) = owner {
+                    format!(" The USB interface is held by \"{proc}\". Close that app and retry.")
+                } else {
+                    String::new()
+                };
+                format!(
+                    "USB_CLAIM_FAILED: claim_interface({target_iface}) returned: {e}.{hint} \
+                     Device interfaces: [{}]",
+                    iface_debug.join("; ")
+                )
+            })?;
 
             let _ = handle.set_alternate_setting(target_iface, 0);
 
@@ -264,7 +318,9 @@ impl UsbSession {
 
     pub fn get_device_info(&mut self) -> Result<UsbDeviceInfo, String> {
         let pkt = self.transact(CMD_QUERY_DEVICE_INFO, &[], 5_000)?;
-        if pkt.body.len() < 20 {
+        eprintln!("[USB DEBUG] device_info: cmd={}, body_len={}, hex={:02x?}",
+            pkt.id, pkt.body.len(), &pkt.body[..pkt.body.len().min(40)]);
+        if pkt.body.len() < 4 {
             return Err(format!("device info response too short: {} bytes", pkt.body.len()));
         }
         let version_number = ((pkt.body[0] as u32) << 24)
@@ -272,14 +328,21 @@ impl UsbSession {
             | ((pkt.body[2] as u32) << 8)
             |  (pkt.body[3] as u32);
         let version_code = format!("{}.{}.{}", pkt.body[1], pkt.body[2], pkt.body[3]);
-        let sn = String::from_utf8_lossy(&pkt.body[4..20])
-            .trim_end_matches('\0')
-            .to_string();
+        let sn = if pkt.body.len() > 4 {
+            String::from_utf8_lossy(&pkt.body[4..])
+                .trim_end_matches('\0')
+                .to_string()
+        } else {
+            String::new()
+        };
+        eprintln!("[USB DEBUG] device_info parsed: sn={:?}, version={}", sn, version_code);
         Ok(UsbDeviceInfo { sn, model: self.model.clone(), version_code, version_number })
     }
 
     pub fn list_files(&mut self) -> Result<Vec<FileEntry>, String> {
         let count_pkt = self.transact(CMD_QUERY_FILE_COUNT, &[], 5_000)?;
+        eprintln!("[USB DEBUG] file_count: cmd={}, body_len={}, hex={:02x?}",
+            count_pkt.id, count_pkt.body.len(), &count_pkt.body[..count_pkt.body.len().min(20)]);
         let max_count = if count_pkt.body.len() >= 4 {
             ((count_pkt.body[0] as usize) << 24)
                 | ((count_pkt.body[1] as usize) << 16)
@@ -288,35 +351,77 @@ impl UsbSession {
         } else {
             usize::MAX
         };
+        eprintln!("[USB DEBUG] file_count parsed: max_count={}", max_count);
+
+        if max_count == 0 {
+            return Ok(Vec::new());
+        }
 
         let seq = self.next_seq();
         self.write_packet(CMD_QUERY_FILE_LIST, seq, &[])?;
         let mut raw: Vec<u8> = Vec::new();
+        let mut got_data = false;
         loop {
-            let pkt = self.recv_packet(10_000)?;
-            if pkt.id != CMD_QUERY_FILE_LIST { continue; }
-            if pkt.body.is_empty() { break; }
-            raw.extend_from_slice(&pkt.body);
+            // Use a short timeout after receiving data — the device may not
+            // send an empty terminator packet after the last chunk.
+            let timeout = if got_data { 1_000 } else { 10_000 };
+            match self.recv_packet(timeout) {
+                Ok(pkt) => {
+                    eprintln!("[USB DEBUG] file_list pkt: cmd={}, body_len={}", pkt.id, pkt.body.len());
+                    if pkt.id != CMD_QUERY_FILE_LIST { continue; }
+                    if pkt.body.is_empty() { break; }
+                    raw.extend_from_slice(&pkt.body);
+                    got_data = true;
+                }
+                Err(_) if got_data => {
+                    eprintln!("[USB DEBUG] file_list: no terminator, using {} bytes received", raw.len());
+                    break;
+                }
+                Err(e) => return Err(e),
+            }
         }
+        eprintln!("[USB DEBUG] file_list total raw bytes: {}", raw.len());
 
         parse_file_list(&raw, max_count)
     }
 
     pub fn get_file(&mut self, name: &str, length: u32) -> Result<Vec<u8>, String> {
-        let mut body = Vec::with_capacity(4 + name.len());
-        body.extend_from_slice(&length.to_be_bytes());
-        body.extend_from_slice(name.as_bytes());
+        eprintln!("[USB DEBUG] get_file: name={:?} length={}", name, length);
 
-        let _ack = self.transact(CMD_TRANSFER_FILE, &body, 10_000)?;
+        // Step 1: Initiate transfer with TRANSFER_FILE (cmd 5)
+        let mut req_body = Vec::with_capacity(4 + name.len());
+        req_body.extend_from_slice(&length.to_be_bytes());
+        req_body.extend_from_slice(name.as_bytes());
+        let ack = self.transact(CMD_TRANSFER_FILE, &req_body, 10_000)?;
+        eprintln!(
+            "[USB DEBUG] get_file ack: cmd={}, body_len={}",
+            ack.id, ack.body.len()
+        );
 
+        // Step 2: Fetch data blocks with GET_FILE_BLOCK (cmd 13)
         let mut data: Vec<u8> = Vec::with_capacity(length as usize);
+        let mut block_num: u32 = 0;
         loop {
-            let pkt = self.recv_packet(30_000)?;
-            if pkt.id != CMD_TRANSFER_FILE { continue; }
+            let offset = data.len() as u32;
+            let block_req = offset.to_be_bytes();
+            let pkt = self.transact(CMD_GET_FILE_BLOCK, &block_req, 30_000)?;
+
+            if block_num < 3 || block_num % 100 == 0 {
+                eprintln!(
+                    "[USB DEBUG] get_file block#{}: cmd={}, body_len={}, total={}/{}",
+                    block_num, pkt.id, pkt.body.len(), data.len(), length
+                );
+            }
+
             if pkt.body.is_empty() { break; }
             data.extend_from_slice(&pkt.body);
+            block_num += 1;
             if data.len() >= length as usize { break; }
         }
+        eprintln!(
+            "[USB DEBUG] get_file done: {} blocks, {} bytes (expected {})",
+            block_num, data.len(), length
+        );
         Ok(data)
     }
 
@@ -366,6 +471,12 @@ fn parse_file_list(data: &[u8], max_count: usize) -> Result<Vec<FileEntry>, Stri
             .collect::<String>();
         pos += 16;
 
+        // Strip trailing null bytes from device filenames
+        let name = name.trim_end_matches('\0').to_string();
+
+        if files.len() < 3 {
+            eprintln!("[USB DEBUG] file[{}]: name={:?} size={} sig={}", files.len(), name, size, signature);
+        }
         files.push(FileEntry { name, size, signature });
     }
 

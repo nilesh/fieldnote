@@ -1,10 +1,11 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { Usb, RefreshCw, Download, CheckCircle2, AlertCircle, Plug } from "lucide-react";
+import { Usb, RefreshCw, Download, CheckCircle2, AlertCircle, Plug, ArrowUp, ArrowDown } from "lucide-react";
 import { useNotesStore } from "@/stores/notesStore";
-import { insertNote, getNoteBySignature } from "@/lib/db";
+import { getNoteBySignature } from "@/lib/db";
 import { formatDuration, cn } from "@/lib/utils";
-import type { Note, NoteState } from "@/types";
+import type { NoteState } from "@/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,12 +28,33 @@ interface DisplayFile extends UsbFileEntry {
   alreadyImported: boolean;
 }
 
-/** Parse timestamp from filename like "20260309-141851-Rec25.hda" */
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const MONTH_MAP: Record<string, string> = {
+  Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06",
+  Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12",
+};
+
+/** Parse timestamp from filename like "2025Nov03-132512-Rec65.hda" or "20260309-141851-Rec25.hda" */
 function parseRecordedAt(filename: string): number {
-  const m = filename.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/);
-  if (!m) return Date.now();
-  const [, y, mo, d, h, mi, s] = m;
-  return new Date(`${y}-${mo}-${d}T${h}:${mi}:${s}`).getTime();
+  // Text month format: 2025Nov03-132512
+  const tm = filename.match(/^(\d{4})([A-Z][a-z]{2})(\d{2})-(\d{2})(\d{2})(\d{2})/);
+  if (tm) {
+    const [, y, mon, d, h, mi, s] = tm;
+    const mo = MONTH_MAP[mon] ?? "01";
+    return new Date(`${y}-${mo}-${d}T${h}:${mi}:${s}`).getTime();
+  }
+  // Numeric format: 20260309-141851
+  const nm = filename.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/);
+  if (nm) {
+    const [, y, mo, d, h, mi, s] = nm;
+    return new Date(`${y}-${mo}-${d}T${h}:${mi}:${s}`).getTime();
+  }
+  return Date.now();
 }
 
 /** Estimate duration in ms from .hda file size (4-channel OPUS at ~256kbps = 32 bytes/ms) */
@@ -43,11 +65,14 @@ function estimateDuration(size: number, filename: string): number {
 }
 
 type ImportStatus = "idle" | "importing" | "done" | "error";
+type SortKey = "name" | "recordedAt" | "size" | "durationMs";
+type SortDir = "asc" | "desc";
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function DevicePage() {
   const { addNote } = useNotesStore();
+  const location = useLocation();
 
   const [deviceInfo, setDeviceInfo] = useState<UsbDeviceInfo | null>(null);
   const [files, setFiles] = useState<DisplayFile[]>([]);
@@ -56,6 +81,23 @@ export default function DevicePage() {
   const [importing, setImporting] = useState(false);
   const [importResults, setImportResults] = useState<Record<string, ImportStatus>>({});
   const [error, setError] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("recordedAt");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "recordedAt" ? "desc" : "asc");
+    }
+  };
+
+  const sortedFiles = [...files].sort((a, b) => {
+    const mul = sortDir === "asc" ? 1 : -1;
+    if (sortKey === "name") return mul * a.name.localeCompare(b.name);
+    return mul * ((a[sortKey] ?? 0) - (b[sortKey] ?? 0));
+  });
 
   // ── Connect & scan ──────────────────────────────────────────────────────────
   const handleConnect = useCallback(async () => {
@@ -67,12 +109,9 @@ export default function DevicePage() {
     setDeviceInfo(null);
 
     try {
-      // 1. Verify device is reachable and get info
-      const info: UsbDeviceInfo = await invoke("usb_get_device_info");
+      // Single USB session: connect, get info, and list files
+      const [info, rawFiles] = await invoke<[UsbDeviceInfo, UsbFileEntry[]]>("usb_connect_and_scan");
       setDeviceInfo(info);
-
-      // 2. List files
-      const rawFiles: UsbFileEntry[] = await invoke("usb_list_files");
 
       const displayFiles: DisplayFile[] = await Promise.all(
         rawFiles.map(async (f) => {
@@ -86,20 +125,23 @@ export default function DevicePage() {
         })
       );
 
-      displayFiles.sort((a, b) => b.recordedAt - a.recordedAt);
       setFiles(displayFiles);
+      setError(null); // clear any stale error from prior attempts
 
-      // Auto-select new files
-      const newFiles = displayFiles
-        .filter((f) => !f.alreadyImported)
-        .map((f) => f.name);
-      setSelected(new Set(newFiles));
+      setSelected(new Set());
     } catch (err) {
       setError(String(err));
     } finally {
       setScanning(false);
     }
   }, []);
+
+  // Auto-connect when navigated from Notes page
+  useEffect(() => {
+    if ((location.state as any)?.autoConnect && !deviceInfo && !scanning) {
+      handleConnect();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRefresh = () => handleConnect();
 
@@ -133,22 +175,15 @@ export default function DevicePage() {
           continue;
         }
 
-        // 2. Download raw bytes from device over USB
-        const data: number[] = await invoke("usb_get_file", {
+        // 2. Download from device and save to disk in one backend call
+        //    (avoids serializing large byte arrays over IPC)
+        const savedPath: string = await invoke("usb_download_and_save", {
           name: file.name,
           length: file.size,
         });
-        const bytes = new Uint8Array(data);
 
-        // 3. Save to app data dir
-        const savedPath: string = await invoke("save_recording", {
-          filename: file.name,
-          data: Array.from(bytes),
-        });
-
-        // 5. Insert into DB
-        const note: Note = {
-          id: crypto.randomUUID(),
+        // 3. Insert into DB via store (handles both DB + Zustand)
+        await addNote({
           filename: file.name,
           filePath: savedPath,
           signature: file.signature,
@@ -161,10 +196,7 @@ export default function DevicePage() {
           hinotesId: null,
           folderId: null,
           tags: [],
-        };
-
-        await insertNote(note);
-        addNote(note);
+        });
 
         setImportResults((prev) => ({ ...prev, [file.name]: "done" }));
       } catch (err) {
@@ -322,14 +354,35 @@ export default function DevicePage() {
                         className="accent-primary"
                       />
                     </th>
-                    <th className="py-2 pr-4">Filename</th>
-                    <th className="py-2 pr-4">Recorded</th>
-                    <th className="py-2 pr-4">Duration</th>
+                    <th className="py-2 pr-4">
+                      <button onClick={() => toggleSort("name")} className="inline-flex items-center gap-1 hover:text-foreground">
+                        Filename
+                        {sortKey === "name" && (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                      </button>
+                    </th>
+                    <th className="py-2 pr-4">
+                      <button onClick={() => toggleSort("recordedAt")} className="inline-flex items-center gap-1 hover:text-foreground">
+                        Recorded
+                        {sortKey === "recordedAt" && (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                      </button>
+                    </th>
+                    <th className="py-2 pr-4">
+                      <button onClick={() => toggleSort("size")} className="inline-flex items-center gap-1 hover:text-foreground">
+                        Size
+                        {sortKey === "size" && (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                      </button>
+                    </th>
+                    <th className="py-2 pr-4">
+                      <button onClick={() => toggleSort("durationMs")} className="inline-flex items-center gap-1 hover:text-foreground">
+                        Duration
+                        {sortKey === "durationMs" && (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                      </button>
+                    </th>
                     <th className="py-2 pr-4">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {files.map((file) => {
+                  {sortedFiles.map((file) => {
                     const importStatus = importResults[file.name];
                     const isDone = importStatus === "done" || file.alreadyImported;
                     return (
@@ -355,7 +408,10 @@ export default function DevicePage() {
                         <td className="py-2.5 pr-4 text-muted-foreground">
                           {new Date(file.recordedAt).toLocaleString()}
                         </td>
-                        <td className="py-2.5 pr-4 text-muted-foreground">
+                        <td className="py-2.5 pr-4 text-muted-foreground tabular-nums">
+                          {file.size ? formatFileSize(file.size) : "—"}
+                        </td>
+                        <td className="py-2.5 pr-4 text-muted-foreground tabular-nums">
                           {file.durationMs ? formatDuration(file.durationMs) : "—"}
                         </td>
                         <td className="py-2.5 pr-4">

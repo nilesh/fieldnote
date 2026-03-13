@@ -101,7 +101,7 @@ function EmptyState({ hasNotes }: { hasNotes: boolean }) {
       </p>
       {!hasNotes && (
         <button
-          onClick={() => navigate("/device")}
+          onClick={() => navigate("/device", { state: { autoConnect: true } })}
           className="mt-4 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
         >
           Connect Device

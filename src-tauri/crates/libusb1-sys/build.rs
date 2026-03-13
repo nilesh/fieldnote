@@ -202,23 +202,7 @@ fn make_source() {
 }
 
 fn main() {
-    println!("cargo:rerun-if-env-changed=LIBUSB_STATIC");
-    let statik = {
-        if cfg!(target_os = "macos") {
-            match std::env::var("LIBUSB_STATIC").unwrap_or_default().as_ref() {
-                "" | "0" => false,
-                _ => true,
-            }
-        } else {
-            std::env::var("CARGO_CFG_TARGET_FEATURE")
-                .map(|s| s.contains("crt-static"))
-                .unwrap_or_default()
-        }
-    };
-
-    let is_freebsd = std::env::var("CARGO_CFG_TARGET_OS") == Ok("freebsd".into());
-
-    if (!is_freebsd && cfg!(feature = "vendored")) || !find_libusb_pkg(statik) {
-        make_source();
-    }
+    // Always build from source — this vendored copy is patched to use
+    // USBInterfaceOpenSeize on macOS (bypasses accessoryd).
+    make_source();
 }
