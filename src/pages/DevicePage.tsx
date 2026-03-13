@@ -224,23 +224,10 @@ export default function DevicePage() {
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <p className="font-medium">Connection failed</p>
-            {error.startsWith("EXCLUSIVE_ACCESS") ? (
-              <>
-                <p className="mt-0.5 text-xs opacity-80">
-                  macOS is blocking exclusive USB access (accessoryd or a browser may be holding the device).
-                </p>
-                <p className="mt-1 text-xs opacity-70">
-                  Unplug the device, wait 2 seconds, plug it back in, and try again. If that fails, quit your browser (⌘Q) first.
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="mt-0.5 text-xs opacity-80">{error}</p>
-                <p className="mt-1 text-xs opacity-70">
-                  Make sure HiDock P1 is connected via USB and the HiNotes app is closed.
-                </p>
-              </>
-            )}
+            <p className="mt-0.5 text-xs font-mono opacity-80">{error}</p>
+            <p className="mt-1 text-xs opacity-70">
+              Make sure HiDock P1 is connected via USB and the HiNotes app is closed.
+            </p>
           </div>
         </div>
       )}

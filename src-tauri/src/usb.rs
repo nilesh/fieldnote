@@ -157,25 +157,29 @@ impl UsbSession {
 
             let handle = device
                 .open()
-                .map_err(|e| format!("EXCLUSIVE_ACCESS: Cannot open USB device ({e})."))?;
+                .map_err(|e| format!("USB_OPEN_FAILED: device.open() returned: {e}"))?;
 
             // detach_kernel_driver is a no-op on macOS (returns Unsupported);
             // on Linux it detaches the usbfs driver if attached.
-            let _ = handle.detach_kernel_driver(0);
+            let detach_result = handle.detach_kernel_driver(0);
 
-            // Match the WebUSB setup: selectConfiguration(1), claimInterface(0),
-            // selectAlternateInterface(0, 0). set_active_configuration may fail
-            // if already set — that's fine.
-            let _ = handle.set_active_configuration(1);
+            // Don't call set_active_configuration — device already has config 1
+            // per ioreg (kUSBCurrentConfiguration=1). Calling it on macOS can
+            // cause issues with libusb re-opening the device.
 
-            handle
-                .claim_interface(0)
-                .map_err(|e| format!("EXCLUSIVE_ACCESS: Cannot claim USB interface ({e})."))?;
+            let claim_result = handle.claim_interface(0);
+            if let Err(ref e) = claim_result {
+                return Err(format!(
+                    "USB_CLAIM_FAILED: claim_interface(0) returned: {e} \
+                     (detach_kernel_driver returned: {detach_result:?})"
+                ));
+            }
 
-            // This arms the bulk endpoints on the device.
-            handle
-                .set_alternate_setting(0, 0)
-                .map_err(|e| format!("Cannot set alternate interface: {e}"))?;
+            // selectAlternateInterface(0, 0) — arms the bulk endpoints.
+            let alt_result = handle.set_alternate_setting(0, 0);
+            if let Err(ref e) = alt_result {
+                return Err(format!("USB_ALT_FAILED: set_alternate_setting(0,0) returned: {e}"));
+            }
 
             return Ok(Self { handle, seq: 0, rx_buf: Vec::new(), model });
         }
