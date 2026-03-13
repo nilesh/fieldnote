@@ -137,8 +137,8 @@ pub struct UsbSession {
 impl UsbSession {
     /// Find and open a HiDock device.
     ///
-    /// Uses libusb's IOUSBDeviceOpenSeize on macOS, which forcefully takes
-    /// the device from accessoryd. No retry needed — the seize is immediate.
+    /// Uses a patched libusb that calls IOUSBInterfaceOpenSeize on macOS,
+    /// which forcefully takes the interface from accessoryd (MFi daemon).
     pub fn open() -> Result<Self, String> {
         let devices = rusb::devices().map_err(|e| e.to_string())?;
 
@@ -159,9 +159,7 @@ impl UsbSession {
                 .open()
                 .map_err(|e| format!("USB_OPEN_FAILED: device.open() returned: {e}"))?;
 
-            // Enumerate all interfaces in the active configuration so we can
-            // find the one with bulk IN+OUT endpoints (the Jensen data interface).
-            // On macOS, interface 0 may be held by accessoryd for iAP auth.
+            // Enumerate interfaces to find the one with bulk IN+OUT endpoints.
             let config_desc = device.active_config_descriptor()
                 .map_err(|e| format!("USB_CONFIG_FAILED: {e}"))?;
 
@@ -169,23 +167,20 @@ impl UsbSession {
             let mut iface_debug = Vec::new();
 
             for iface in config_desc.interfaces() {
-                for desc in iface.descriptors() {
-                    let num = desc.interface_number();
-                    let cls = desc.class_code();
-                    let sub = desc.sub_class_code();
-                    let proto = desc.protocol_code();
-                    let eps: Vec<String> = desc.endpoint_descriptors()
+                for idesc in iface.descriptors() {
+                    let num = idesc.interface_number();
+                    let eps: Vec<String> = idesc.endpoint_descriptors()
                         .map(|ep| format!("0x{:02x}({:?})", ep.address(), ep.transfer_type()))
                         .collect();
                     iface_debug.push(format!(
                         "iface{}:class={},sub={},proto={},eps=[{}]",
-                        num, cls, sub, proto, eps.join(",")
+                        num, idesc.class_code(), idesc.sub_class_code(),
+                        idesc.protocol_code(), eps.join(",")
                     ));
 
-                    // Look for an interface with bulk endpoints
-                    let has_bulk_in = desc.endpoint_descriptors()
+                    let has_bulk_in = idesc.endpoint_descriptors()
                         .any(|ep| ep.address() == EP_IN && matches!(ep.transfer_type(), rusb::TransferType::Bulk));
-                    let has_bulk_out = desc.endpoint_descriptors()
+                    let has_bulk_out = idesc.endpoint_descriptors()
                         .any(|ep| ep.address() == EP_OUT && matches!(ep.transfer_type(), rusb::TransferType::Bulk));
 
                     if has_bulk_in && has_bulk_out && data_iface.is_none() {
@@ -196,19 +191,18 @@ impl UsbSession {
 
             let target_iface = data_iface.unwrap_or(0);
 
-            // Try to detach kernel driver from target interface
+            // On Linux, detach any kernel driver first
+            #[cfg(not(target_os = "macos"))]
             let _ = handle.detach_kernel_driver(target_iface);
 
-            let claim_result = handle.claim_interface(target_iface);
-            if let Err(ref e) = claim_result {
-                return Err(format!(
-                    "USB_CLAIM_FAILED: claim_interface({target_iface}) returned: {e}. \
-                     Device interfaces: [{}]",
-                    iface_debug.join("; ")
-                ));
-            }
+            // On macOS, our patched libusb uses USBInterfaceOpenSeize
+            // which forcefully takes the interface from accessoryd.
+            handle.claim_interface(target_iface).map_err(|e| format!(
+                "USB_CLAIM_FAILED: claim_interface({target_iface}) returned: {e}. \
+                 Device interfaces: [{}]",
+                iface_debug.join("; ")
+            ))?;
 
-            // selectAlternateInterface — arms the bulk endpoints
             let _ = handle.set_alternate_setting(target_iface, 0);
 
             return Ok(Self { handle, seq: 0, rx_buf: Vec::new(), model });
