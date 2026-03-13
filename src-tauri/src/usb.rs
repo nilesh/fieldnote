@@ -159,27 +159,57 @@ impl UsbSession {
                 .open()
                 .map_err(|e| format!("USB_OPEN_FAILED: device.open() returned: {e}"))?;
 
-            // detach_kernel_driver is a no-op on macOS (returns Unsupported);
-            // on Linux it detaches the usbfs driver if attached.
-            let detach_result = handle.detach_kernel_driver(0);
+            // Enumerate all interfaces in the active configuration so we can
+            // find the one with bulk IN+OUT endpoints (the Jensen data interface).
+            // On macOS, interface 0 may be held by accessoryd for iAP auth.
+            let config_desc = device.active_config_descriptor()
+                .map_err(|e| format!("USB_CONFIG_FAILED: {e}"))?;
 
-            // Don't call set_active_configuration — device already has config 1
-            // per ioreg (kUSBCurrentConfiguration=1). Calling it on macOS can
-            // cause issues with libusb re-opening the device.
+            let mut data_iface: Option<u8> = None;
+            let mut iface_debug = Vec::new();
 
-            let claim_result = handle.claim_interface(0);
+            for iface in config_desc.interfaces() {
+                for desc in iface.descriptors() {
+                    let num = desc.interface_number();
+                    let cls = desc.class_code();
+                    let sub = desc.sub_class_code();
+                    let proto = desc.protocol_code();
+                    let eps: Vec<String> = desc.endpoint_descriptors()
+                        .map(|ep| format!("0x{:02x}({:?})", ep.address(), ep.transfer_type()))
+                        .collect();
+                    iface_debug.push(format!(
+                        "iface{}:class={},sub={},proto={},eps=[{}]",
+                        num, cls, sub, proto, eps.join(",")
+                    ));
+
+                    // Look for an interface with bulk endpoints
+                    let has_bulk_in = desc.endpoint_descriptors()
+                        .any(|ep| ep.address() == EP_IN && matches!(ep.transfer_type(), rusb::TransferType::Bulk));
+                    let has_bulk_out = desc.endpoint_descriptors()
+                        .any(|ep| ep.address() == EP_OUT && matches!(ep.transfer_type(), rusb::TransferType::Bulk));
+
+                    if has_bulk_in && has_bulk_out && data_iface.is_none() {
+                        data_iface = Some(num);
+                    }
+                }
+            }
+
+            let target_iface = data_iface.unwrap_or(0);
+
+            // Try to detach kernel driver from target interface
+            let _ = handle.detach_kernel_driver(target_iface);
+
+            let claim_result = handle.claim_interface(target_iface);
             if let Err(ref e) = claim_result {
                 return Err(format!(
-                    "USB_CLAIM_FAILED: claim_interface(0) returned: {e} \
-                     (detach_kernel_driver returned: {detach_result:?})"
+                    "USB_CLAIM_FAILED: claim_interface({target_iface}) returned: {e}. \
+                     Device interfaces: [{}]",
+                    iface_debug.join("; ")
                 ));
             }
 
-            // selectAlternateInterface(0, 0) — arms the bulk endpoints.
-            let alt_result = handle.set_alternate_setting(0, 0);
-            if let Err(ref e) = alt_result {
-                return Err(format!("USB_ALT_FAILED: set_alternate_setting(0,0) returned: {e}"));
-            }
+            // selectAlternateInterface — arms the bulk endpoints
+            let _ = handle.set_alternate_setting(target_iface, 0);
 
             return Ok(Self { handle, seq: 0, rx_buf: Vec::new(), model });
         }
