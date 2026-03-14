@@ -22,6 +22,7 @@ pub fn run() {
             commands::usb_get_file,
             commands::usb_download_and_save,
             commands::usb_delete_file,
+            commands::check_usb_device,
         ])
         .setup(|app| {
             // Ensure app data directory exists
@@ -32,6 +33,10 @@ pub fn run() {
             std::fs::create_dir_all(&app_data_dir).ok();
             std::fs::create_dir_all(app_data_dir.join("recordings")).ok();
             std::fs::create_dir_all(app_data_dir.join("transcripts")).ok();
+
+            // Start USB device presence watcher
+            commands::start_usb_watcher(app.handle().clone());
+
             Ok(())
         })
         .run(tauri::generate_context!())

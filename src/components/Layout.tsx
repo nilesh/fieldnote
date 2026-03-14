@@ -1,6 +1,7 @@
-import { Outlet, NavLink } from "react-router-dom";
+import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { Home, Mic, HardDrive, Settings, Search, Sun, Moon, Usb } from "lucide-react";
 import { useThemeStore } from "@/stores/themeStore";
+import { useDeviceStore } from "@/stores/deviceStore";
 
 const nav = [
   { to: "/meetings", icon: Home, label: "Meetings" },
@@ -10,6 +11,9 @@ const nav = [
 
 export default function Layout() {
   const { t, dark, toggle } = useThemeStore();
+  const deviceConnected = useDeviceStore((s) => s.connected);
+  const deviceModel = useDeviceStore((s) => s.model);
+  const navigate = useNavigate();
 
   // Gradient backgrounds inspired by MP020 reference images
   const sidebarBg = dark
@@ -142,7 +146,8 @@ export default function Layout() {
         <div style={{ flex: 1 }} />
 
         {/* Device status */}
-        <div
+        <button
+          onClick={() => navigate("/device")}
           style={{
             display: "flex",
             alignItems: "center",
@@ -151,6 +156,21 @@ export default function Layout() {
             borderRadius: 6,
             fontSize: 13,
             color: t.txS,
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            width: "100%",
+            textAlign: "left",
+            fontFamily: "inherit",
+            transition: "background 0.15s",
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.background = dark
+              ? "rgba(255,255,255,0.06)"
+              : "rgba(0,0,0,0.04)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.background = "transparent";
           }}
         >
           <div
@@ -158,13 +178,25 @@ export default function Layout() {
               width: 8,
               height: 8,
               borderRadius: "50%",
-              background: t.ok,
+              background: deviceConnected ? "#4ade80" : dark ? "#555" : "#aaa",
               flexShrink: 0,
+              boxShadow: deviceConnected
+                ? "0 0 6px rgba(74, 222, 128, 0.6), 0 0 2px rgba(74, 222, 128, 0.8)"
+                : "none",
+              transition: "background 0.3s, box-shadow 0.3s",
             }}
           />
-          <span style={{ flex: 1 }}>Hidock P1</span>
-          <Usb size={14} style={{ opacity: 0.6 }} />
-        </div>
+          <span style={{ flex: 1 }}>
+            {deviceConnected
+              ? (deviceModel === "hidock-p1" ? "HiDock P1"
+                : deviceModel === "hidock-p1:mini" ? "HiDock P1 Mini"
+                : deviceModel === "hidock-h1" ? "HiDock H1"
+                : deviceModel === "hidock-h1e" ? "HiDock H1E"
+                : "HiDock")
+              : "No device"}
+          </span>
+          <Usb size={14} style={{ opacity: deviceConnected ? 0.6 : 0.3 }} />
+        </button>
 
         {/* Dark/light toggle */}
         <button

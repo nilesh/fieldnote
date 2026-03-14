@@ -1,7 +1,9 @@
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::AppHandle;
 use tauri::Manager;
-use crate::usb::{UsbSession, UsbDeviceInfo, FileEntry};
+use tauri::Emitter;
+use crate::usb::{self, UsbSession, UsbDeviceInfo, FileEntry};
 
 /// Global USB session — kept alive so we don't have to re-claim the interface
 /// (which races with accessoryd on macOS) for every operation.
@@ -164,4 +166,57 @@ pub async fn usb_delete_file(name: String) -> Result<String, String> {
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+// ─── USB device presence check ───────────────────────────────────────────────
+
+/// One-shot check: is a HiDock device currently on the USB bus?
+/// Returns { connected: bool, model: Option<String> }
+#[tauri::command]
+pub fn check_usb_device() -> serde_json::Value {
+    match usb::find_hidock_device() {
+        Some((model, _, _)) => serde_json::json!({ "connected": true, "model": model }),
+        None => serde_json::json!({ "connected": false, "model": null }),
+    }
+}
+
+// ─── USB hotplug watcher ─────────────────────────────────────────────────────
+
+static WATCHER_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Start a background thread that polls USB presence every 2 seconds
+/// and emits "usb-device-status" events when the state changes.
+pub fn start_usb_watcher(app: AppHandle) {
+    if WATCHER_RUNNING.swap(true, Ordering::SeqCst) {
+        return; // already running
+    }
+
+    std::thread::spawn(move || {
+        let mut was_connected = false;
+        let mut last_model = String::new();
+
+        loop {
+            let current = usb::find_hidock_device();
+            let is_connected = current.is_some();
+            let model = current.as_ref().map(|(m, _, _)| m.clone()).unwrap_or_default();
+
+            if is_connected != was_connected || (is_connected && model != last_model) {
+                let payload = if is_connected {
+                    serde_json::json!({ "connected": true, "model": model })
+                } else {
+                    // Device was unplugged — drop the cached session
+                    if let Ok(mut guard) = USB_SESSION.lock() {
+                        *guard = None;
+                    }
+                    serde_json::json!({ "connected": false, "model": null })
+                };
+
+                let _ = app.emit("usb-device-status", payload);
+                was_connected = is_connected;
+                last_model = model;
+            }
+
+            std::thread::sleep(std::time::Duration::from_secs(2));
+        }
+    });
 }

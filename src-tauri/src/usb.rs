@@ -92,6 +92,23 @@ fn is_hidock(vid: u16, pid: u16) -> bool {
     }
 }
 
+/// Check if any HiDock device is currently attached to the USB bus.
+/// Returns Some((model, vid, pid)) if found, None otherwise.
+/// This is a lightweight check that does NOT open the device.
+pub fn find_hidock_device() -> Option<(String, u16, u16)> {
+    let devices = rusb::devices().ok()?;
+    for device in devices.iter() {
+        if let Ok(desc) = device.device_descriptor() {
+            let vid = desc.vendor_id();
+            let pid = desc.product_id();
+            if is_hidock(vid, pid) {
+                return Some((pid_to_model(pid).to_string(), vid, pid));
+            }
+        }
+    }
+    None
+}
+
 fn pid_to_model(pid: u16) -> &'static str {
     match pid {
         0xB00C | 0x0100 | 0x0102 => "hidock-h1",

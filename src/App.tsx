@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useNotesStore } from "@/stores/notesStore";
 import { useThemeStore } from "@/stores/themeStore";
+import { useDeviceStore } from "@/stores/deviceStore";
 import Layout from "@/components/Layout";
 import DashboardPage from "@/pages/DashboardPage";
 import MeetingDetailPage from "@/pages/MeetingDetailPage";
@@ -15,13 +16,14 @@ export default function App() {
   const loadSettings = useSettingsStore((s) => s.load);
   const loadNotes = useNotesStore((s) => s.loadNotes);
   const loadTheme = useThemeStore((s) => s.load);
+  const initDevice = useDeviceStore((s) => s.init);
   const t = useThemeStore((s) => s.t);
   const [ready, setReady] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
   useEffect(() => {
-    Promise.all([loadSettings(), loadNotes(), loadTheme()]).finally(() =>
+    Promise.all([loadSettings(), loadNotes(), loadTheme(), initDevice()]).finally(() =>
       setReady(true)
     );
   }, []);
