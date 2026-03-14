@@ -22,6 +22,38 @@ export interface Note {
   hinotesId: string | null;  // set if uploaded to HiNotes
   folderId: string | null;
   tags: string[];
+  sentimentPositive: number | null;
+  sentimentNeutral: number | null;
+  sentimentNegative: number | null;
+}
+
+export interface Sentiment {
+  positive: number;
+  neutral: number;
+  negative: number;
+}
+
+export interface Speaker {
+  id: string;
+  name: string;
+  color: string;
+  createdAt: number;
+}
+
+export interface ActionItem {
+  id: string;
+  noteId: string;
+  text: string;
+  assignee: string | null;
+  done: boolean;
+  createdAt: number;
+}
+
+export interface KeyDecision {
+  id: string;
+  noteId: string;
+  text: string;
+  createdAt: number;
 }
 
 export interface TranscriptionSegment {
@@ -120,9 +152,16 @@ export interface AppSettings {
   autoTranscribeOnImport: boolean;
   autoSummarizeAfterTranscript: boolean;
   defaultLanguage: string;
+  speakerDetection: boolean;
 
   // System prompt for summaries
   summarySystemPrompt: string;
+
+  // Device
+  autoTransferOnConnect: boolean;
+
+  // Notifications
+  desktopNotifications: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -136,6 +175,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoTranscribeOnImport: false,
   autoSummarizeAfterTranscript: false,
   defaultLanguage: "en",
+  speakerDetection: true,
   summarySystemPrompt:
     "You are a meeting notes assistant. Summarize the following transcript into clear, structured markdown with: a brief overview, key decisions, action items, and important discussion points.",
+  autoTransferOnConnect: false,
+  desktopNotifications: true,
 };

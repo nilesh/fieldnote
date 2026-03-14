@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { Usb, RefreshCw, Download, CheckCircle2, AlertCircle, Plug, ArrowUp, ArrowDown } from "lucide-react";
 import { useNotesStore } from "@/stores/notesStore";
@@ -73,6 +73,7 @@ type SortDir = "asc" | "desc";
 export default function DevicePage() {
   const { addNote } = useNotesStore();
   const location = useLocation();
+  const navigate = useNavigate();
 
   const [deviceInfo, setDeviceInfo] = useState<UsbDeviceInfo | null>(null);
   const [files, setFiles] = useState<DisplayFile[]>([]);
@@ -196,6 +197,9 @@ export default function DevicePage() {
           hinotesId: null,
           folderId: null,
           tags: [],
+          sentimentPositive: null,
+          sentimentNeutral: null,
+          sentimentNegative: null,
         });
 
         setImportResults((prev) => ({ ...prev, [file.name]: "done" }));
@@ -206,8 +210,8 @@ export default function DevicePage() {
     }
 
     setImporting(false);
-    // Refresh to reflect imported status
-    if (deviceInfo) await handleConnect();
+    // Navigate to Notes page after successful import
+    navigate("/meetings");
   };
 
   // ── Render ──────────────────────────────────────────────────────────────────

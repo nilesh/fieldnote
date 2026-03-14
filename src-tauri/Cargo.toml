@@ -1,12 +1,12 @@
 [package]
-name = "dock-notes"
+name = "fieldnote"
 version = "0.1.0"
-description = "Local-first voice notes manager for HiDock P1"
+description = "Local-first meeting recorder & AI note-taker for HiDock P1"
 authors = ["Nilesh"]
 edition = "2021"
 
 [lib]
-name = "dock_notes_lib"
+name = "fieldnote_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

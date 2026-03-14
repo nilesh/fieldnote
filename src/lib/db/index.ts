@@ -1,14 +1,14 @@
 /**
  * Local SQLite database via tauri-plugin-sql.
- * All note, transcription and summary data is stored here.
+ * All note, transcription, summary, speaker, action item and decision data.
  */
 
 import Database from "@tauri-apps/plugin-sql";
-import type { Note, TranscriptionSegment, Summary } from "@/types";
+import type { Note, TranscriptionSegment, Summary, Speaker, ActionItem, KeyDecision } from "@/types";
 
 let _db: Awaited<ReturnType<typeof Database.load>> | null = null;
 
-const DB_PATH = "sqlite:dock-notes.db";
+const DB_PATH = "sqlite:fieldnote.db";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS notes (
@@ -24,7 +24,10 @@ CREATE TABLE IF NOT EXISTS notes (
   state TEXT NOT NULL DEFAULT 'imported',
   hinotes_id TEXT,
   folder_id TEXT,
-  tags TEXT DEFAULT '[]'
+  tags TEXT DEFAULT '[]',
+  sentiment_positive INTEGER,
+  sentiment_neutral INTEGER,
+  sentiment_negative INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS transcriptions (
@@ -49,17 +52,54 @@ CREATE TABLE IF NOT EXISTS summaries (
   FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS speakers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  color TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS action_items (
+  id TEXT PRIMARY KEY,
+  note_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  assignee TEXT,
+  done INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS key_decisions (
+  id TEXT PRIMARY KEY,
+  note_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_transcriptions_note ON transcriptions(note_id, begin_ms);
 CREATE INDEX IF NOT EXISTS idx_summaries_note ON summaries(note_id);
+CREATE INDEX IF NOT EXISTS idx_action_items_note ON action_items(note_id);
+CREATE INDEX IF NOT EXISTS idx_key_decisions_note ON key_decisions(note_id);
 `;
+
+// Migration: add columns that may not exist in older DBs
+const MIGRATIONS = [
+  "ALTER TABLE notes ADD COLUMN sentiment_positive INTEGER",
+  "ALTER TABLE notes ADD COLUMN sentiment_neutral INTEGER",
+  "ALTER TABLE notes ADD COLUMN sentiment_negative INTEGER",
+];
 
 export async function getDb() {
   if (!_db) {
     _db = await Database.load(DB_PATH);
-    // Run schema (CREATE IF NOT EXISTS is idempotent)
     for (const stmt of SCHEMA.split(";").map((s) => s.trim()).filter(Boolean)) {
       await _db.execute(stmt + ";");
+    }
+    // Run migrations (ignore errors for already-existing columns)
+    for (const m of MIGRATIONS) {
+      try { await _db.execute(m); } catch { /* column already exists */ }
     }
   }
   return _db;
@@ -82,6 +122,9 @@ function rowToNote(row: Record<string, unknown>): Note {
     hinotesId: row.hinotes_id as string | null,
     folderId: row.folder_id as string | null,
     tags: JSON.parse((row.tags as string) || "[]"),
+    sentimentPositive: row.sentiment_positive as number | null,
+    sentimentNeutral: row.sentiment_neutral as number | null,
+    sentimentNegative: row.sentiment_negative as number | null,
   };
 }
 
@@ -90,12 +133,14 @@ export async function insertNote(note: Omit<Note, "id">): Promise<Note> {
   const id = crypto.randomUUID();
   await db.execute(
     `INSERT INTO notes (id, filename, file_path, signature, title, duration_ms,
-      created_at, recorded_at, language, state, hinotes_id, folder_id, tags)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      created_at, recorded_at, language, state, hinotes_id, folder_id, tags,
+      sentiment_positive, sentiment_neutral, sentiment_negative)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id, note.filename, note.filePath, note.signature, note.title,
       note.durationMs, note.createdAt, note.recordedAt, note.language,
       note.state, note.hinotesId, note.folderId, JSON.stringify(note.tags),
+      note.sentimentPositive, note.sentimentNeutral, note.sentimentNegative,
     ]
   );
   return { ...note, id };
@@ -113,6 +158,9 @@ export async function updateNote(id: string, patch: Partial<Note>): Promise<void
   if (patch.language !== undefined) { fields.push("language = ?"); values.push(patch.language); }
   if (patch.tags !== undefined) { fields.push("tags = ?"); values.push(JSON.stringify(patch.tags)); }
   if (patch.folderId !== undefined) { fields.push("folder_id = ?"); values.push(patch.folderId); }
+  if (patch.sentimentPositive !== undefined) { fields.push("sentiment_positive = ?"); values.push(patch.sentimentPositive); }
+  if (patch.sentimentNeutral !== undefined) { fields.push("sentiment_neutral = ?"); values.push(patch.sentimentNeutral); }
+  if (patch.sentimentNegative !== undefined) { fields.push("sentiment_negative = ?"); values.push(patch.sentimentNegative); }
 
   if (fields.length === 0) return;
   values.push(id);
@@ -229,4 +277,120 @@ export async function getLatestSummary(noteId: string): Promise<Summary | null> 
     prompt: r.prompt as string | null,
     createdAt: r.created_at as number,
   };
+}
+
+// ─── Speakers ─────────────────────────────────────────────────────────────────
+
+export async function getSpeakers(): Promise<Speaker[]> {
+  const db = await getDb();
+  const rows = await db.select<Record<string, unknown>[]>(
+    "SELECT * FROM speakers ORDER BY created_at ASC"
+  );
+  return rows.map((r) => ({
+    id: r.id as string,
+    name: r.name as string,
+    color: r.color as string,
+    createdAt: r.created_at as number,
+  }));
+}
+
+export async function insertSpeaker(speaker: Omit<Speaker, "id">): Promise<Speaker> {
+  const db = await getDb();
+  const id = crypto.randomUUID();
+  await db.execute(
+    "INSERT INTO speakers (id, name, color, created_at) VALUES (?, ?, ?, ?)",
+    [id, speaker.name, speaker.color, speaker.createdAt]
+  );
+  return { ...speaker, id };
+}
+
+// ─── Action Items ─────────────────────────────────────────────────────────────
+
+export async function getActionItems(noteId: string): Promise<ActionItem[]> {
+  const db = await getDb();
+  const rows = await db.select<Record<string, unknown>[]>(
+    "SELECT * FROM action_items WHERE note_id = ? ORDER BY created_at ASC",
+    [noteId]
+  );
+  return rows.map((r) => ({
+    id: r.id as string,
+    noteId: r.note_id as string,
+    text: r.text as string,
+    assignee: r.assignee as string | null,
+    done: (r.done as number) === 1,
+    createdAt: r.created_at as number,
+  }));
+}
+
+export async function getAllActionItems(): Promise<ActionItem[]> {
+  const db = await getDb();
+  const rows = await db.select<Record<string, unknown>[]>(
+    "SELECT * FROM action_items ORDER BY created_at DESC"
+  );
+  return rows.map((r) => ({
+    id: r.id as string,
+    noteId: r.note_id as string,
+    text: r.text as string,
+    assignee: r.assignee as string | null,
+    done: (r.done as number) === 1,
+    createdAt: r.created_at as number,
+  }));
+}
+
+export async function insertActionItems(items: Omit<ActionItem, "id">[]): Promise<void> {
+  const db = await getDb();
+  for (const it of items) {
+    await db.execute(
+      "INSERT INTO action_items (id, note_id, text, assignee, done, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      [crypto.randomUUID(), it.noteId, it.text, it.assignee, it.done ? 1 : 0, it.createdAt]
+    );
+  }
+}
+
+export async function toggleActionItem(id: string, done: boolean): Promise<void> {
+  const db = await getDb();
+  await db.execute("UPDATE action_items SET done = ? WHERE id = ?", [done ? 1 : 0, id]);
+}
+
+// ─── Key Decisions ────────────────────────────────────────────────────────────
+
+export async function getKeyDecisions(noteId: string): Promise<KeyDecision[]> {
+  const db = await getDb();
+  const rows = await db.select<Record<string, unknown>[]>(
+    "SELECT * FROM key_decisions WHERE note_id = ? ORDER BY created_at ASC",
+    [noteId]
+  );
+  return rows.map((r) => ({
+    id: r.id as string,
+    noteId: r.note_id as string,
+    text: r.text as string,
+    createdAt: r.created_at as number,
+  }));
+}
+
+export async function insertKeyDecisions(items: Omit<KeyDecision, "id">[]): Promise<void> {
+  const db = await getDb();
+  for (const d of items) {
+    await db.execute(
+      "INSERT INTO key_decisions (id, note_id, text, created_at) VALUES (?, ?, ?, ?)",
+      [crypto.randomUUID(), d.noteId, d.text, d.createdAt]
+    );
+  }
+}
+
+// ─── Search ───────────────────────────────────────────────────────────────────
+
+export async function searchNotes(query: string): Promise<Note[]> {
+  const db = await getDb();
+  const q = `%${query}%`;
+  const rows = await db.select<Record<string, unknown>[]>(
+    `SELECT DISTINCT n.* FROM notes n
+     LEFT JOIN transcriptions t ON t.note_id = n.id
+     LEFT JOIN summaries s ON s.note_id = n.id
+     WHERE n.title LIKE ? OR n.filename LIKE ? OR n.tags LIKE ?
+       OR t.sentence LIKE ? OR s.content LIKE ?
+     ORDER BY n.created_at DESC LIMIT 20`,
+    [q, q, q, q, q]
+  );
+  return rows.map(rowToNote);
 }

@@ -7,6 +7,7 @@ import { cn, formatDuration, formatDateTime } from "@/lib/utils";
 import { transcribeAudio, toTranscriptionSegments } from "@/lib/api/transcribe";
 import { summarize } from "@/lib/api/summarize";
 import { readFile } from "@tauri-apps/plugin-fs";
+import { invoke } from "@tauri-apps/api/core";
 import type { TranscriptionSegment } from "@/types";
 import ReactMarkdown from "react-markdown";
 
@@ -83,11 +84,18 @@ export default function NoteDetailPage() {
     setProcessing("transcribing");
     await updateNote(id, { state: "transcribing" });
     try {
-      const data = await readFile(note.filePath);
+      // Convert .hda (MP3 in proprietary wrapper) to plain .mp3 via ffmpeg
+      let audioPath = note.filePath;
+      let audioFilename = note.filename;
+      if (note.filename.endsWith(".hda")) {
+        audioPath = await invoke<string>("convert_hda_to_mp3", { filePath: note.filePath });
+        audioFilename = note.filename.replace(/\.hda$/i, ".mp3");
+      }
+      const data = await readFile(audioPath);
       const whisperSegments = await transcribeAudio(
         settings.openaiApiKey,
         data,
-        note.filename,
+        audioFilename,
         settings.defaultLanguage || undefined
       );
       const segs = toTranscriptionSegments(id, whisperSegments, settings.transcriptionModel);

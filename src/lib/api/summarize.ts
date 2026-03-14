@@ -129,7 +129,11 @@ export async function summarize(
   systemPrompt: string
 ): Promise<string> {
   if (provider === "anthropic") {
-    return summarizeWithClaude(apiKey, segments, model, systemPrompt);
+    // Fall back to Claude default if an OpenAI model was passed
+    const m = model.startsWith("gpt") ? "claude-sonnet-4-5" : model;
+    return summarizeWithClaude(apiKey, segments, m as SummaryModel, systemPrompt);
   }
-  return summarizeWithOpenAI(apiKey, segments, model, systemPrompt);
+  // Fall back to GPT default if a Claude model was passed
+  const m = model.startsWith("claude") ? "gpt-4o" : model;
+  return summarizeWithOpenAI(apiKey, segments, m as SummaryModel, systemPrompt);
 }

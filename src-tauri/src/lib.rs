@@ -17,6 +17,7 @@ pub fn run() {
             commands::compute_md5,
             commands::save_recording,
             commands::get_app_data_dir,
+            commands::convert_hda_to_mp3,
             commands::usb_connect_and_scan,
             commands::usb_get_file,
             commands::usb_download_and_save,

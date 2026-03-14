@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Note, TranscriptionSegment, Summary } from "@/types";
+import type { Note, TranscriptionSegment, Summary, ActionItem, KeyDecision } from "@/types";
 import * as db from "@/lib/db";
 
 interface NotesState {
@@ -7,6 +7,8 @@ interface NotesState {
   activeNoteId: string | null;
   transcriptions: Record<string, TranscriptionSegment[]>;
   summaries: Record<string, Summary | null>;
+  actionItems: Record<string, ActionItem[]>;
+  keyDecisions: Record<string, KeyDecision[]>;
   loading: boolean;
 
   loadNotes: () => Promise<void>;
@@ -18,6 +20,11 @@ interface NotesState {
   setTranscriptions: (noteId: string, segments: Omit<TranscriptionSegment, "id">[]) => Promise<void>;
   loadSummary: (noteId: string) => Promise<void>;
   setSummary: (summary: Omit<Summary, "id">) => Promise<void>;
+  loadActionItems: (noteId: string) => Promise<void>;
+  setActionItems: (noteId: string, items: Omit<ActionItem, "id">[]) => Promise<void>;
+  toggleActionItem: (id: string, noteId: string, done: boolean) => Promise<void>;
+  loadKeyDecisions: (noteId: string) => Promise<void>;
+  setKeyDecisions: (noteId: string, items: Omit<KeyDecision, "id">[]) => Promise<void>;
 }
 
 export const useNotesStore = create<NotesState>((set, _get) => ({
@@ -25,6 +32,8 @@ export const useNotesStore = create<NotesState>((set, _get) => ({
   activeNoteId: null,
   transcriptions: {},
   summaries: {},
+  actionItems: {},
+  keyDecisions: {},
   loading: false,
 
   loadNotes: async () => {
@@ -76,5 +85,39 @@ export const useNotesStore = create<NotesState>((set, _get) => ({
   setSummary: async (summary) => {
     const saved = await db.insertSummary(summary);
     set((s) => ({ summaries: { ...s.summaries, [summary.noteId]: saved } }));
+  },
+
+  loadActionItems: async (noteId) => {
+    const items = await db.getActionItems(noteId);
+    set((s) => ({ actionItems: { ...s.actionItems, [noteId]: items } }));
+  },
+
+  setActionItems: async (noteId, items) => {
+    await db.insertActionItems(items);
+    const saved = await db.getActionItems(noteId);
+    set((s) => ({ actionItems: { ...s.actionItems, [noteId]: saved } }));
+  },
+
+  toggleActionItem: async (id, noteId, done) => {
+    await db.toggleActionItem(id, done);
+    set((s) => ({
+      actionItems: {
+        ...s.actionItems,
+        [noteId]: (s.actionItems[noteId] ?? []).map((a) =>
+          a.id === id ? { ...a, done } : a
+        ),
+      },
+    }));
+  },
+
+  loadKeyDecisions: async (noteId) => {
+    const items = await db.getKeyDecisions(noteId);
+    set((s) => ({ keyDecisions: { ...s.keyDecisions, [noteId]: items } }));
+  },
+
+  setKeyDecisions: async (noteId, items) => {
+    await db.insertKeyDecisions(items);
+    const saved = await db.getKeyDecisions(noteId);
+    set((s) => ({ keyDecisions: { ...s.keyDecisions, [noteId]: saved } }));
   },
 }));

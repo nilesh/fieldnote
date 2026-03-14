@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    dock_notes_lib::run();
+    fieldnote_lib::run();
 }

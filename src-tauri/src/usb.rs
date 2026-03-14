@@ -388,39 +388,57 @@ impl UsbSession {
     pub fn get_file(&mut self, name: &str, length: u32) -> Result<Vec<u8>, String> {
         eprintln!("[USB DEBUG] get_file: name={:?} length={}", name, length);
 
-        // Step 1: Initiate transfer with TRANSFER_FILE (cmd 5)
-        let mut req_body = Vec::with_capacity(4 + name.len());
-        req_body.extend_from_slice(&length.to_be_bytes());
-        req_body.extend_from_slice(name.as_bytes());
-        let ack = self.transact(CMD_TRANSFER_FILE, &req_body, 10_000)?;
+        // Step 1: Send TRANSFER_FILE (cmd 5) with just the filename.
+        let ack = self.transact(CMD_TRANSFER_FILE, name.as_bytes(), 10_000)?;
         eprintln!(
             "[USB DEBUG] get_file ack: cmd={}, body_len={}",
             ack.id, ack.body.len()
         );
 
-        // Step 2: Fetch data blocks with GET_FILE_BLOCK (cmd 13)
         let mut data: Vec<u8> = Vec::with_capacity(length as usize);
-        let mut block_num: u32 = 0;
-        loop {
-            let offset = data.len() as u32;
-            let block_req = offset.to_be_bytes();
-            let pkt = self.transact(CMD_GET_FILE_BLOCK, &block_req, 30_000)?;
+        // Include ack body if it contains data (first chunk)
+        if !ack.body.is_empty() {
+            data.extend_from_slice(&ack.body);
+        }
 
-            if block_num < 3 || block_num % 100 == 0 {
+        // Step 2: Pull data in batches using GET_FILE_BLOCK (cmd 13) with
+        // current offset. The device sends a burst of CMD 5 packets per request.
+        let mut req_count: u32 = 0;
+        while data.len() < length as usize {
+            let offset = data.len() as u32;
+            let offset_bytes = offset.to_be_bytes();
+            let seq = self.next_seq();
+            self.write_packet(CMD_GET_FILE_BLOCK, seq, &offset_bytes)?;
+
+            // Read all packets from this batch
+            let mut batch_bytes = 0usize;
+            loop {
+                match self.recv_packet(10_000) {
+                    Ok(pkt) => {
+                        if pkt.body.is_empty() { break; }
+                        batch_bytes += pkt.body.len();
+                        data.extend_from_slice(&pkt.body);
+                        if data.len() >= length as usize { break; }
+                    }
+                    Err(_) => break, // timeout = end of batch
+                }
+            }
+
+            req_count += 1;
+            if req_count <= 3 || req_count % 50 == 0 {
                 eprintln!(
-                    "[USB DEBUG] get_file block#{}: cmd={}, body_len={}, total={}/{}",
-                    block_num, pkt.id, pkt.body.len(), data.len(), length
+                    "[USB DEBUG] get_file batch#{}: +{} bytes, total={}/{}",
+                    req_count, batch_bytes, data.len(), length
                 );
             }
 
-            if pkt.body.is_empty() { break; }
-            data.extend_from_slice(&pkt.body);
-            block_num += 1;
-            if data.len() >= length as usize { break; }
+            // No progress in this batch — device has nothing more
+            if batch_bytes == 0 { break; }
         }
+
         eprintln!(
-            "[USB DEBUG] get_file done: {} blocks, {} bytes (expected {})",
-            block_num, data.len(), length
+            "[USB DEBUG] get_file done: {} batches, {} bytes (expected {})",
+            req_count, data.len(), length
         );
         Ok(data)
     }

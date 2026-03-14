@@ -65,6 +65,42 @@ pub fn get_app_data_dir(app: AppHandle) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Convert an .hda recording to .mp3 using ffmpeg with volume normalization.
+/// HiDock recordings are very quiet (~-66dB); loudnorm boosts them for Whisper.
+/// Returns the path to the converted .mp3 file.
+#[tauri::command]
+pub async fn convert_hda_to_mp3(file_path: String) -> Result<String, String> {
+    let input = std::path::PathBuf::from(&file_path);
+    let output = input.with_extension("mp3");
+
+    // Skip if already converted
+    if output.exists() {
+        return Ok(output.to_string_lossy().to_string());
+    }
+
+    let status = tokio::process::Command::new("ffmpeg")
+        .args([
+            "-i", &file_path,
+            "-y",
+            "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
+            "-ar", "16000",
+            "-ac", "1",
+            "-b:a", "48k",
+        ])
+        .arg(output.as_os_str())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {e}. Is ffmpeg installed?"))?;
+
+    if !status.success() {
+        return Err(format!("ffmpeg exited with code {}", status.code().unwrap_or(-1)));
+    }
+
+    Ok(output.to_string_lossy().to_string())
+}
+
 // ─── USB commands ─────────────────────────────────────────────────────────────
 
 /// Connect to the device and return info + file list in a single session.
