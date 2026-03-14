@@ -246,6 +246,14 @@ export async function deleteTranscriptions(noteId: string): Promise<void> {
   await db.execute("DELETE FROM transcriptions WHERE note_id = ?", [noteId]);
 }
 
+export async function updateSegmentSpeaker(
+  segmentId: string,
+  speaker: string | null
+): Promise<void> {
+  const db = await getDb();
+  await db.execute("UPDATE transcriptions SET speaker = ? WHERE id = ?", [speaker, segmentId]);
+}
+
 // ─── Summaries ────────────────────────────────────────────────────────────────
 
 export async function insertSummary(

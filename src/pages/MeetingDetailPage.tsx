@@ -11,6 +11,7 @@ import {
   AlertCircle,
   Check,
   Folder,
+  UserRound,
 } from "lucide-react";
 import { useNotesStore } from "@/stores/notesStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -563,6 +564,7 @@ export default function MeetingDetailPage() {
         {activeTab === "transcript" && (
           <TranscriptTab
             segments={segments}
+            noteId={id!}
             activeSegmentIdx={activeSegmentIdx}
             speakerColors={speakerColors}
             processing={processing}
@@ -697,6 +699,7 @@ export default function MeetingDetailPage() {
 
 function TranscriptTab({
   segments,
+  noteId,
   activeSegmentIdx,
   speakerColors,
   processing,
@@ -704,13 +707,55 @@ function TranscriptTab({
   t,
 }: {
   segments: TranscriptionSegment[];
+  noteId: string;
   activeSegmentIdx: number;
   speakerColors: Record<string, string>;
   processing: "transcribing" | "summarizing" | null;
   onSeek: (seg: TranscriptionSegment) => void;
   t: Theme;
 }) {
+  const updateSegmentSpeaker = useNotesStore((s) => s.updateSegmentSpeaker);
   const [hoveredIdx, setHoveredIdx] = useState<number>(-1);
+  const [editingIdx, setEditingIdx] = useState<number>(-1);
+  const [speakerInput, setSpeakerInput] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Collect existing speaker names from all segments for quick-pick
+  const existingSpeakers = useMemo(() => {
+    const set = new Set<string>();
+    for (const seg of segments) {
+      if (seg.speaker) set.add(seg.speaker);
+    }
+    return Array.from(set).sort();
+  }, [segments]);
+
+  const openEditor = (idx: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingIdx(idx);
+    setSpeakerInput(segments[idx]?.speaker || "");
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const commitSpeaker = async (idx: number, name: string) => {
+    const seg = segments[idx];
+    if (!seg) return;
+    const speaker = name.trim() || null;
+    if (speaker !== seg.speaker) {
+      await updateSegmentSpeaker(noteId, seg.id, speaker);
+    }
+    setEditingIdx(-1);
+    setSpeakerInput("");
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent, idx: number) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commitSpeaker(idx, speakerInput);
+    } else if (e.key === "Escape") {
+      setEditingIdx(-1);
+      setSpeakerInput("");
+    }
+  };
 
   if (segments.length === 0) {
     return (
@@ -741,12 +786,12 @@ function TranscriptTab({
       {segments.map((seg, i) => {
         const isActive = i === activeSegmentIdx;
         const isHovered = i === hoveredIdx;
+        const isEditing = i === editingIdx;
         const speakerColor = seg.speaker ? speakerColors[seg.speaker] || t.lk : t.lk;
 
         return (
-          <button
+          <div
             key={seg.id}
-            onClick={() => onSeek(seg)}
             onMouseEnter={() => setHoveredIdx(i)}
             onMouseLeave={() => setHoveredIdx(-1)}
             style={{
@@ -756,7 +801,6 @@ function TranscriptTab({
               width: "100%",
               textAlign: "left",
               background: isActive ? t.acL : isHovered ? t.bgH : "transparent",
-              border: "none",
               borderRadius: 8,
               padding: "10px 12px",
               cursor: "pointer",
@@ -766,6 +810,7 @@ function TranscriptTab({
           >
             {/* Timestamp */}
             <span
+              onClick={() => onSeek(seg)}
               style={{
                 fontSize: 12,
                 fontVariantNumeric: "tabular-nums",
@@ -791,22 +836,99 @@ function TranscriptTab({
             />
 
             {/* Content */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              {seg.speaker && (
-                <span
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: speakerColor,
-                    marginRight: 6,
-                  }}
-                >
-                  {seg.speaker}
-                </span>
-              )}
+            <div style={{ flex: 1, minWidth: 0 }} onClick={() => onSeek(seg)}>
+              {/* Speaker label / editor */}
+              <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: seg.speaker || isEditing || isHovered ? 2 : 0 }}>
+                {isEditing ? (
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      ref={inputRef}
+                      value={speakerInput}
+                      onChange={(e) => setSpeakerInput(e.target.value)}
+                      onKeyDown={(e) => handleInputKeyDown(e, i)}
+                      onBlur={() => commitSpeaker(i, speakerInput)}
+                      placeholder="Speaker name..."
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: t.tx,
+                        background: t.bgI,
+                        border: `1px solid ${t.bd}`,
+                        borderRadius: 4,
+                        padding: "2px 6px",
+                        outline: "none",
+                        width: 120,
+                        fontFamily: "inherit",
+                      }}
+                    />
+                    {existingSpeakers.length > 0 && (
+                      <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                        {existingSpeakers.map((name) => (
+                          <button
+                            key={name}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              commitSpeaker(i, name);
+                            }}
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              padding: "2px 6px",
+                              borderRadius: 4,
+                              border: "none",
+                              cursor: "pointer",
+                              background: (speakerColors[name] || t.lk) + "20",
+                              color: speakerColors[name] || t.lk,
+                            }}
+                          >
+                            {name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : seg.speaker ? (
+                  <span
+                    onClick={(e) => openEditor(i, e)}
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: speakerColor,
+                      cursor: "pointer",
+                    }}
+                    title="Click to change speaker"
+                  >
+                    {seg.speaker}
+                  </span>
+                ) : isHovered ? (
+                  <button
+                    onClick={(e) => openEditor(i, e)}
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 500,
+                      color: t.txM,
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 3,
+                      opacity: 0.7,
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    <UserRound size={10} />
+                    Assign speaker
+                  </button>
+                ) : null}
+              </div>
               <span style={{ fontSize: 14, color: t.tx, lineHeight: 1.55 }}>{seg.sentence}</span>
             </div>
-          </button>
+          </div>
         );
       })}
     </div>

@@ -3,10 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { Mic, Clock, Check, Upload, Users, ChevronRight, Folder } from "lucide-react";
 import { useThemeStore } from "@/stores/themeStore";
 import { useNotesStore } from "@/stores/notesStore";
-import { getAllActionItems } from "@/lib/db";
-import { Card, CardContent } from "@/components/ui/card";
+import { getAllActionItems, getActionItems, getLatestSummary } from "@/lib/db";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import type { Theme } from "@/lib/theme";
 import type { Note, ActionItem } from "@/types";
 
 // ---------------------------------------------------------------------------
@@ -57,124 +56,244 @@ function statePreviewText(state: Note["state"]): string {
 }
 
 // ---------------------------------------------------------------------------
-// Stat Card
+// Stat Card (matches mockup)
 // ---------------------------------------------------------------------------
 
 function StatCard({
   icon: Icon,
   iconColor,
-  iconBg,
   label,
   value,
+  t,
 }: {
   icon: React.ElementType;
   iconColor: string;
-  iconBg: string;
   label: string;
   value: string;
+  t: Theme;
 }) {
   return (
-    <Card className="shadow-sm">
-      <CardContent className="flex items-center gap-4 p-5">
+    <div
+      style={{
+        padding: "18px 20px",
+        background: t.bgC,
+        borderRadius: 12,
+        border: `1px solid ${t.bd}`,
+        boxShadow: t.sh,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 10,
+          color: t.tx2,
+        }}
+      >
         <div
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
-          style={{ background: iconBg }}
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: 8,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: iconColor + "18",
+            color: iconColor,
+          }}
         >
-          <Icon size={20} style={{ color: iconColor }} />
+          <Icon size={18} />
         </div>
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-muted-foreground">
-            {label}
-          </p>
-          <p className="text-xl font-bold tabular-nums text-foreground">
-            {value}
-          </p>
-        </div>
-      </CardContent>
-    </Card>
+        <span style={{ fontSize: 12, fontWeight: 500 }}>{label}</span>
+      </div>
+      <div
+        style={{
+          fontSize: 28,
+          fontWeight: 700,
+          color: t.tx,
+          letterSpacing: "-0.03em",
+        }}
+      >
+        {value}
+      </div>
+    </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Meeting Card
+// Meeting Card (matches mockup — full-width list item)
 // ---------------------------------------------------------------------------
 
-function MeetingCard({ note, onClick }: { note: Note; onClick: () => void }) {
-  const { t } = useThemeStore();
+function MeetingCard({
+  note,
+  summary,
+  actionItems,
+  onClick,
+  t,
+}: {
+  note: Note;
+  summary: string | null;
+  actionItems: ActionItem[];
+  onClick: () => void;
+  t: Theme;
+}) {
   const dateStr = formatRelativeDate(note.recordedAt ?? note.createdAt);
   const duration = note.durationMs ? formatDurationHm(note.durationMs) : "--";
   const tags = note.tags ?? [];
+  const doneCount = actionItems.filter((a) => a.done).length;
+  const previewText = summary || statePreviewText(note.state);
 
   return (
-    <Card
-      className="hover:border-primary hover:shadow-md transition-all cursor-pointer"
+    <div
       onClick={onClick}
+      style={{
+        padding: "16px 20px",
+        background: t.bgC,
+        borderRadius: 12,
+        border: `1px solid ${t.bd}`,
+        cursor: "pointer",
+        boxShadow: t.sh,
+        transition: "all 0.15s",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = t.ac;
+        e.currentTarget.style.boxShadow = t.shL;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = t.bd;
+        e.currentTarget.style.boxShadow = t.sh;
+      }}
     >
-      <CardContent className="flex w-full flex-col p-5 text-left">
-        {/* Title + tags row */}
-        <div className="flex items-start justify-between gap-3">
-          <p className="line-clamp-1 text-[15px] font-semibold text-foreground">
+      {/* Title + tags */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          marginBottom: 8,
+        }}
+      >
+        <div>
+          <h3
+            style={{
+              fontSize: 15,
+              fontWeight: 600,
+              color: t.tx,
+              margin: 0,
+            }}
+          >
             {note.title || note.filename}
-          </p>
-          {tags.length > 0 && (
-            <div className="flex shrink-0 flex-wrap gap-1">
-              {tags.map((tag) => (
-                <Badge key={tag} variant="secondary" className="rounded-full">
-                  {tag}
-                </Badge>
-              ))}
-            </div>
-          )}
+          </h3>
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              marginTop: 4,
+              fontSize: 12,
+              color: t.tx2,
+            }}
+          >
+            <span>{dateStr}</span>
+            <span>{duration}</span>
+            <span
+              style={{ display: "flex", alignItems: "center", gap: 4 }}
+            >
+              <Users size={12} /> --
+            </span>
+          </div>
         </div>
-
-        {/* Metadata row */}
-        <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <Clock size={12} />
-            {dateStr}
-          </span>
-          <span className="flex items-center gap-1">
-            <Mic size={12} />
-            {duration}
-          </span>
-          <span className="flex items-center gap-1">
-            <Users size={12} />
-            --
-          </span>
-        </div>
-
-        {/* Summary preview */}
-        <p className="mt-3 line-clamp-2 text-sm text-muted-foreground">
-          {statePreviewText(note.state)}
-        </p>
-
-        {/* Bottom row */}
-        <div className="mt-4 flex items-center justify-between">
-          {/* Speaker avatar placeholders */}
-          <div className="flex -space-x-2">
-            {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium"
+        {tags.length > 0 && (
+          <div style={{ display: "flex", gap: 4 }}>
+            {tags.map((tag) => (
+              <span
+                key={tag}
                 style={{
+                  padding: "2px 8px",
+                  borderRadius: 10,
+                  fontSize: 11,
+                  fontWeight: 500,
                   background: t.tanL,
-                  border: `2px solid ${t.bgC}`,
-                  color: t.txM,
+                  color: t.tx2,
                 }}
               >
-                ?
-              </div>
+                {tag}
+              </span>
             ))}
           </div>
+        )}
+      </div>
 
-          {/* Action item progress placeholder + chevron */}
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>--</span>
-            <ChevronRight size={14} style={{ color: t.ac }} />
-          </div>
+      {/* Summary preview */}
+      <p
+        style={{
+          fontSize: 13,
+          color: t.tx2,
+          margin: "8px 0 10px",
+          lineHeight: 1.5,
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden",
+        }}
+      >
+        {previewText}
+      </p>
+
+      {/* Bottom row */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        {/* Speaker avatars — placeholder until speakers are loaded */}
+        <div style={{ display: "flex" }}>
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: "50%",
+                background: t.tanL,
+                border: `2px solid ${t.bgC}`,
+                marginLeft: i > 0 ? -6 : 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 10,
+                fontWeight: 600,
+                color: t.txM,
+              }}
+            >
+              ?
+            </div>
+          ))}
         </div>
-      </CardContent>
-    </Card>
+
+        {/* Action items + chevron */}
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            fontSize: 12,
+            color: t.tx2,
+          }}
+        >
+          {actionItems.length > 0 && (
+            <span
+              style={{ display: "flex", alignItems: "center", gap: 4 }}
+            >
+              <Check size={12} /> {doneCount}/{actionItems.length}
+            </span>
+          )}
+          <ChevronRight size={14} style={{ color: t.txM }} />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -190,9 +309,28 @@ export default function DashboardPage() {
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
   const [allActions, setAllActions] = useState<ActionItem[]>([]);
+  const [noteActions, setNoteActions] = useState<Record<string, ActionItem[]>>({});
+  const [noteSummaries, setNoteSummaries] = useState<Record<string, string | null>>({});
 
+  // Load global action items + per-note data
   useEffect(() => {
     getAllActionItems().then(setAllActions).catch(() => {});
+
+    // Load per-note action items and summaries
+    (async () => {
+      const actions: Record<string, ActionItem[]> = {};
+      const summaries: Record<string, string | null> = {};
+      for (const note of notes) {
+        const [items, summary] = await Promise.all([
+          getActionItems(note.id).catch(() => [] as ActionItem[]),
+          getLatestSummary(note.id).catch(() => null),
+        ]);
+        actions[note.id] = items;
+        summaries[note.id] = summary?.content ?? null;
+      }
+      setNoteActions(actions);
+      setNoteSummaries(summaries);
+    })();
   }, [notes]);
 
   // Derived data
@@ -214,7 +352,7 @@ export default function DashboardPage() {
 
   const totalHours = useMemo(() => {
     const totalMs = notes.reduce((sum, n) => sum + (n.durationMs ?? 0), 0);
-    return (totalMs / 3_600_000).toFixed(1);
+    return `${(totalMs / 3_600_000).toFixed(1)}h`;
   }, [notes]);
 
   // Filter
@@ -245,129 +383,155 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      {/* -- Header -------------------------------------------------------- */}
-      <div className="flex items-center justify-between border-b px-6 py-5">
-        <h1 className="text-2xl font-bold text-foreground">Meetings</h1>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "20px 24px",
+        }}
+      >
+        <h1
+          style={{
+            fontSize: 24,
+            fontWeight: 700,
+            color: t.tx,
+            margin: 0,
+            letterSpacing: "-0.025em",
+          }}
+        >
+          Meetings
+        </h1>
         <Button variant="gradient" onClick={handleImport}>
           <Upload size={16} />
           Import Recording
         </Button>
       </div>
 
-      {/* -- Scrollable content -------------------------------------------- */}
-      <div className="flex-1 overflow-y-auto px-6 py-6">
-        {/* -- Stats row --------------------------------------------------- */}
-        <div className="grid grid-cols-4 gap-4">
-          <StatCard
-            icon={Mic}
-            iconColor={t.ac}
-            iconBg={t.acL}
-            label="Total Meetings"
-            value={String(notes.length)}
-          />
-          <StatCard
-            icon={Clock}
-            iconColor={t.lk}
-            iconBg={t.lkL}
-            label="Recorded Hours"
-            value={totalHours}
-          />
-          <StatCard
-            icon={Check}
-            iconColor={t.ok}
-            iconBg={t.okL}
-            label="Action Items"
-            value={String(allActions.length)}
-          />
-          <StatCard
-            icon={Clock}
-            iconColor={t.warn}
-            iconBg={t.warnL}
-            label="Pending"
-            value={String(allActions.filter((a) => !a.done).length)}
-          />
-        </div>
-
-        {/* -- Folder + Tag filters ---------------------------------------- */}
-        {(folders.length > 0 || allTags.length > 0) && (
-          <div className="mt-6 space-y-3">
-            {/* Folder tabs */}
-            {folders.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Folder size={14} className="text-muted-foreground" />
-                <div className="flex flex-wrap gap-1.5">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setActiveFolder(null)}
-                    style={
-                      activeFolder === null
-                        ? { background: t.ac, color: t.acT }
-                        : undefined
-                    }
-                  >
-                    All
-                  </Button>
-                  {folders.map((f) => (
-                    <Button
-                      key={f}
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setActiveFolder(activeFolder === f ? null : f)}
-                      style={
-                        activeFolder === f
-                          ? { background: t.ac, color: t.acT }
-                          : undefined
-                      }
-                    >
-                      {f}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Tag chips */}
-            {allTags.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {allTags.map((tag) => {
-                  const isActive = activeTags.has(tag);
-                  return (
-                    <Badge
-                      key={tag}
-                      variant={isActive ? "default" : "outline"}
-                      className="cursor-pointer rounded-full"
-                      onClick={() => toggleTag(tag)}
-                    >
-                      {tag}
-                    </Badge>
-                  );
-                })}
-              </div>
-            )}
+      {/* Scrollable content */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "0 24px 24px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          {/* Stats row */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+            <StatCard icon={Mic} iconColor={t.ac} label="Total Meetings" value={String(notes.length)} t={t} />
+            <StatCard icon={Clock} iconColor={t.lk} label="Recorded Hours" value={totalHours} t={t} />
+            <StatCard icon={Check} iconColor={t.ok} label="Action Items" value={String(allActions.length)} t={t} />
+            <StatCard icon={Clock} iconColor={t.warn} label="Pending" value={String(allActions.filter((a) => !a.done).length)} t={t} />
           </div>
-        )}
 
-        {/* -- Meeting cards ----------------------------------------------- */}
-        <div className="mt-6">
-          {filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-24 text-center">
-              <p className="text-sm text-muted-foreground">
-                No meetings match your filters.
-              </p>
+          {/* Folder + Tag filters */}
+          {(folders.length > 0 || allTags.length > 0) && (
+            <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+              {folders.length > 0 && (
+                <>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <button
+                      onClick={() => setActiveFolder(null)}
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: 6,
+                        border: "none",
+                        fontSize: 13,
+                        fontWeight: 500,
+                        cursor: "pointer",
+                        background: activeFolder === null ? t.ac : "transparent",
+                        color: activeFolder === null ? t.acT : t.tx2,
+                      }}
+                    >
+                      <Folder
+                        size={12}
+                        style={{ marginRight: 4, verticalAlign: -2 }}
+                      />{" "}
+                      All
+                    </button>
+                    {folders.map((f) => (
+                      <button
+                        key={f}
+                        onClick={() =>
+                          setActiveFolder(activeFolder === f ? null : f)
+                        }
+                        style={{
+                          padding: "6px 14px",
+                          borderRadius: 6,
+                          border: "none",
+                          fontSize: 13,
+                          fontWeight: 500,
+                          cursor: "pointer",
+                          background: activeFolder === f ? t.ac : "transparent",
+                          color: activeFolder === f ? t.acT : t.tx2,
+                        }}
+                      >
+                        <Folder
+                          size={12}
+                          style={{ marginRight: 4, verticalAlign: -2 }}
+                        />{" "}
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                  {allTags.length > 0 && (
+                    <div
+                      style={{ width: 1, height: 20, background: t.bd }}
+                    />
+                  )}
+                </>
+              )}
+              {allTags.length > 0 && (
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                  {allTags.map((tag) => {
+                    const isActive = activeTags.has(tag);
+                    return (
+                      <button
+                        key={tag}
+                        onClick={() => toggleTag(tag)}
+                        style={{
+                          padding: "4px 10px",
+                          borderRadius: 12,
+                          fontSize: 11,
+                          fontWeight: 500,
+                          cursor: "pointer",
+                          border: `1px solid ${isActive ? t.lk : t.bd}`,
+                          background: isActive ? t.lkL : "transparent",
+                          color: isActive ? t.lk : t.tx2,
+                        }}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-              {filtered.map((note) => (
+          )}
+
+          {/* Meeting list */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {filtered.length === 0 ? (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: 48,
+                  color: t.txM,
+                  fontSize: 14,
+                }}
+              >
+                No meetings match your filters.
+              </div>
+            ) : (
+              filtered.map((note) => (
                 <MeetingCard
                   key={note.id}
                   note={note}
+                  summary={noteSummaries[note.id] ?? null}
+                  actionItems={noteActions[note.id] ?? []}
                   onClick={() => navigate(`/meetings/${note.id}`)}
+                  t={t}
                 />
-              ))}
-            </div>
-          )}
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>

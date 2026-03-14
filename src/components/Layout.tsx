@@ -174,16 +174,14 @@ export default function Layout() {
           }}
         >
           <div
+            className={deviceConnected ? "led-throb" : ""}
             style={{
               width: 8,
               height: 8,
               borderRadius: "50%",
-              background: deviceConnected ? "#4ade80" : dark ? "#555" : "#aaa",
+              background: deviceConnected ? "#22874a" : dark ? "#555" : "#aaa",
               flexShrink: 0,
-              boxShadow: deviceConnected
-                ? "0 0 6px rgba(74, 222, 128, 0.6), 0 0 2px rgba(74, 222, 128, 0.8)"
-                : "none",
-              transition: "background 0.3s, box-shadow 0.3s",
+              transition: "background 0.3s",
             }}
           />
           <span style={{ flex: 1 }}>

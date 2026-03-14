@@ -18,6 +18,7 @@ interface NotesState {
   deleteNote: (id: string) => Promise<void>;
   loadTranscriptions: (noteId: string) => Promise<void>;
   setTranscriptions: (noteId: string, segments: Omit<TranscriptionSegment, "id">[]) => Promise<void>;
+  updateSegmentSpeaker: (noteId: string, segmentId: string, speaker: string | null) => Promise<void>;
   loadSummary: (noteId: string) => Promise<void>;
   setSummary: (summary: Omit<Summary, "id">) => Promise<void>;
   loadActionItems: (noteId: string) => Promise<void>;
@@ -68,6 +69,19 @@ export const useNotesStore = create<NotesState>((set, _get) => ({
   loadTranscriptions: async (noteId) => {
     const segments = await db.getTranscriptions(noteId);
     set((s) => ({ transcriptions: { ...s.transcriptions, [noteId]: segments } }));
+  },
+
+  updateSegmentSpeaker: async (noteId, segmentId, speaker) => {
+    await db.updateSegmentSpeaker(segmentId, speaker);
+    // Optimistically update in store
+    set((s) => ({
+      transcriptions: {
+        ...s.transcriptions,
+        [noteId]: (s.transcriptions[noteId] ?? []).map((seg) =>
+          seg.id === segmentId ? { ...seg, speaker } : seg
+        ),
+      },
+    }));
   },
 
   setTranscriptions: async (noteId, segments) => {

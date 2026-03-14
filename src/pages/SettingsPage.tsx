@@ -206,10 +206,15 @@ export default function SettingsPage() {
                     value={form.defaultSummaryProvider}
                     onValueChange={(v) => {
                       const provider = v as AppSettings["defaultSummaryProvider"];
-                      set("defaultSummaryProvider", provider);
-                      // Reset model to default for provider
                       const defaultModel = provider === "openai" ? "gpt-4o" : "claude-sonnet-4-5";
-                      set("defaultSummaryModel", defaultModel as AppSettings["defaultSummaryModel"]);
+                      const next = {
+                        ...form,
+                        defaultSummaryProvider: provider,
+                        defaultSummaryModel: defaultModel as AppSettings["defaultSummaryModel"],
+                      };
+                      setForm(next);
+                      setSaved(false);
+                      save(next);
                     }}
                   >
                     <SelectTrigger className="min-w-[180px]">

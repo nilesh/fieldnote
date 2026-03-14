@@ -160,3 +160,12 @@ body {
 .dark .gradient-storage {
   background: linear-gradient(90deg, #FF4E20 0%, #ff6a3d 100%);
 }
+
+/* LED status throb */
+@keyframes led-throb {
+  0%, 100% { box-shadow: 0 0 3px rgba(34, 135, 74, 0.4), 0 0 1px rgba(34, 135, 74, 0.6); }
+  50%      { box-shadow: 0 0 8px rgba(34, 135, 74, 0.7), 0 0 3px rgba(34, 135, 74, 0.9); }
+}
+.led-throb {
+  animation: led-throb 2.5s ease-in-out infinite;
+}

@@ -8,6 +8,13 @@ Local-first Tauri v2 + React desktop app for the **HiDock P1** voice recorder. I
 - **Backend**: Tauri v2, Rust, SQLite (via tauri-plugin-sql)
 - **USB**: Custom binary protocol ("Jensen protocol") reverse-engineered from HiNotes web app
 
+## UI Guidelines
+- **Use shadcn/ui components only** for all UI elements (Button, Card, Dialog, Switch, Select, Input, Badge, etc.). Do not use custom/hand-rolled UI primitives.
+- Theme: MP020 palette (Bright Sandstone, Red Gravy, Web Cobblestone, Dusty Cotton, Otan Red, Midnight Smoke)
+- Gradient accents: Red Gravy -> Otan Red for buttons/accents. Use `btn-gradient` CSS class or `variant="gradient"` on Button.
+- Dark mode: CSS class strategy (`darkMode: "class"`), toggled via `themeStore`
+- Reference mockup: `docs/mockup-fieldnote-app.jsx`
+
 ## Jensen USB Protocol
 Reverse-engineered from `https://hinotes.hidock.com/chunks/jensen.0f31d61a.js` (3.9MB JS bundle). Internal name is "Jensen".
 
