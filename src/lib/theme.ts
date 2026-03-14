@@ -1,6 +1,6 @@
-// MP250 Palette
-// Bauhaus Tan #CCC4AE | Konkikyo Blue #191F45 | Funky Monkey #AD4E1A
-// Bunny Hop #F3ECEA | Angel Falls #A3BDD3 | Blueberry Twist #24547D
+// MP020 Palette
+// Bright Sandstone #DAD8CF | Red Gravy #B83312 | Web Cobblestone #1F282E
+// Dusty Cotton #E4E3DC | Otan Red #FF4E20 | Midnight Smoke #414E58
 
 export interface Theme {
   bg: string; bgSb: string; bgC: string; bgH: string; bgA: string; bgI: string;
@@ -14,36 +14,36 @@ export interface Theme {
 }
 
 export const lightTheme: Theme = {
-  bg: "#F3ECEA",      bgSb: "#191F45",    bgC: "#ffffff",      bgH: "#efe8e4",
-  bgA: "#E6DDD6",     bgI: "#ffffff",
-  tx: "#191F45",       tx2: "#586178",      txM: "#8b8f9e",
-  txS: "#A3BDD3",     txSA: "#ffffff",
-  bd: "#d9cfC5",       bdL: "#ebe4dd",
-  ac: "#AD4E1A",       acH: "#933f12",      acL: "#faeee5",      acT: "#ffffff",
-  lk: "#24547D",       lkL: "#dae8f3",      sec: "#A3BDD3",      secL: "#e4eef5",
-  tan: "#CCC4AE",      tanL: "#e2ddd2",
-  ok: "#3d7a4a",       okL: "#e2f2e6",      warn: "#AD4E1A",     warnL: "#faeee5",
+  bg: "#DAD8CF",      bgSb: "#E4E3DC",    bgC: "#f0efea",      bgH: "#d0cec4",
+  bgA: "#c8c6bc",     bgI: "#f0efea",
+  tx: "#1F282E",       tx2: "#414E58",      txM: "#6d7882",
+  txS: "#414E58",     txSA: "#1F282E",
+  bd: "#c2c0b7",       bdL: "#d1cfc6",
+  ac: "#B83312",       acH: "#9a2a0e",      acL: "#f2ddd6",      acT: "#ffffff",
+  lk: "#414E58",       lkL: "#dde1e4",      sec: "#FF4E20",      secL: "#ffe4db",
+  tan: "#DAD8CF",      tanL: "#E4E3DC",
+  ok: "#3d7a4a",       okL: "#dff0e3",      warn: "#B83312",     warnL: "#f2ddd6",
   err: "#b83a3a",      errL: "#fce4e4",
-  sh: "0 1px 3px rgba(25,31,69,0.06),0 1px 2px rgba(25,31,69,0.04)",
-  shL: "0 4px 12px rgba(25,31,69,0.08)",
+  sh: "0 1px 3px rgba(31,40,46,0.06),0 1px 2px rgba(31,40,46,0.04)",
+  shL: "0 4px 12px rgba(31,40,46,0.10)",
 };
 
 export const darkTheme: Theme = {
-  bg: "#141517",       bgSb: "#0e0f12",     bgC: "#1c1d21",      bgH: "#252629",
-  bgA: "#2a2b30",     bgI: "#1c1d21",
-  tx: "#F3ECEA",       tx2: "#b5ada5",      txM: "#706b65",
-  txS: "#8a8379",     txSA: "#F3ECEA",
-  bd: "#2e2f34",       bdL: "#232427",
-  ac: "#D4693A",       acH: "#c05a2d",      acL: "#2d201a",      acT: "#ffffff",
-  lk: "#8bb8d6",       lkL: "#1a2530",      sec: "#8bb8d6",      secL: "#1a2530",
-  tan: "#CCC4AE",      tanL: "#2a2824",
-  ok: "#6dbd7a",       okL: "#1a261c",      warn: "#D4693A",     warnL: "#2d201a",
-  err: "#e06060",      errL: "#2d1a1a",
+  bg: "#1F282E",       bgSb: "#171e23",     bgC: "#283038",      bgH: "#313a42",
+  bgA: "#354049",     bgI: "#283038",
+  tx: "#E4E3DC",       tx2: "#a8b0a6",      txM: "#6d7782",
+  txS: "#8a9199",     txSA: "#E4E3DC",
+  bd: "#354049",       bdL: "#2d363d",
+  ac: "#FF4E20",       acH: "#e04318",      acL: "#3a2219",      acT: "#ffffff",
+  lk: "#8a9da8",       lkL: "#263038",      sec: "#FF4E20",      secL: "#3a2219",
+  tan: "#DAD8CF",      tanL: "#2d3339",
+  ok: "#6dbd7a",       okL: "#1e2c20",      warn: "#FF4E20",     warnL: "#3a2219",
+  err: "#e06060",      errL: "#3a1e1e",
   sh: "0 1px 3px rgba(0,0,0,0.4),0 0 0 1px rgba(255,255,255,0.03)",
   shL: "0 8px 24px rgba(0,0,0,0.5),0 0 0 1px rgba(255,255,255,0.03)",
 };
 
 export const VOICE_COLORS = [
-  "#AD4E1A", "#24547D", "#A3BDD3", "#8B6D3F",
-  "#6dbd7a", "#D4693A", "#CCC4AE", "#b83a3a",
+  "#B83312", "#414E58", "#FF4E20", "#6d7882",
+  "#6dbd7a", "#DAD8CF", "#1F282E", "#b83a3a",
 ];

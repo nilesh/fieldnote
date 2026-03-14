@@ -262,7 +262,7 @@ export default function MeetingDetailPage() {
   ];
 
   return (
-    <div style={{ display: "flex", flex: 1, flexDirection: "column", overflow: "hidden", background: t.bg }}>
+    <div style={{ display: "flex", flex: 1, flexDirection: "column", overflow: "hidden" }}>
       {/* ─── Header Section ────────────────────────────────────────────── */}
       <div style={{ padding: "20px 28px 0 28px" }}>
         {/* Back link */}
@@ -361,14 +361,14 @@ export default function MeetingDetailPage() {
               <button
                 onClick={runTranscription}
                 disabled={!!processing}
+                className="btn-gradient"
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
                   gap: 6,
                   fontSize: 13,
                   fontWeight: 600,
-                  color: t.acT,
-                  background: t.ac,
+                  color: "#fff",
                   border: "none",
                   borderRadius: 8,
                   padding: "7px 14px",
@@ -604,12 +604,12 @@ export default function MeetingDetailPage() {
           {/* Play/Pause button */}
           <button
             onClick={togglePlay}
+            className="btn-gradient"
             style={{
               width: 36,
               height: 36,
               borderRadius: "50%",
-              background: t.ac,
-              color: t.acT,
+              color: "#fff",
               border: "none",
               cursor: "pointer",
               display: "flex",
@@ -648,10 +648,10 @@ export default function MeetingDetailPage() {
             }}
           >
             <div
+              className="gradient-storage"
               style={{
                 height: "100%",
                 borderRadius: 3,
-                background: t.ac,
                 width: `${Math.min(scrubFraction * 100, 100)}%`,
                 transition: "width 0.1s linear",
               }}

@@ -2,6 +2,74 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  :root {
+    --background: 50 7% 83%;          /* #DAD8CF  Bright Sandstone */
+    --foreground: 198 19% 15%;        /* #1F282E  Web Cobblestone */
+    --card: 50 8% 93%;                /* #f0efea */
+    --card-foreground: 198 19% 15%;
+    --popover: 50 8% 93%;
+    --popover-foreground: 198 19% 15%;
+    --primary: 11 71% 39%;            /* #B83312  Red Gravy */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 14 100% 56%;         /* #FF4E20  Otan Red */
+    --secondary-foreground: 0 0% 100%;
+    --muted: 48 5% 75%;               /* #c8c6bc */
+    --muted-foreground: 203 13% 47%;  /* #414E58  Midnight Smoke */
+    --accent: 11 71% 39%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 52% 47%;         /* #b83a3a */
+    --destructive-foreground: 0 0% 100%;
+    --border: 48 6% 74%;              /* #c2c0b7 */
+    --input: 48 6% 74%;
+    --ring: 11 71% 39%;
+    --radius: 0.625rem;
+
+    /* Extended MP020 tokens */
+    --success: 140 33% 36%;           /* #3d7a4a */
+    --success-foreground: 0 0% 100%;
+    --success-muted: 138 30% 90%;     /* #dff0e3 */
+    --warning: 11 71% 39%;            /* #B83312 */
+    --warning-muted: 14 50% 90%;      /* #f2ddd6 */
+    --link: 203 13% 30%;              /* #414E58  Midnight Smoke */
+    --link-muted: 203 10% 88%;        /* #dde1e4 */
+    --tan: 50 7% 83%;                 /* #DAD8CF  Bright Sandstone */
+    --tan-muted: 48 5% 88%;           /* #E4E3DC  Dusty Cotton */
+  }
+
+  .dark {
+    --background: 198 19% 15%;        /* #1F282E  Web Cobblestone */
+    --foreground: 48 5% 88%;          /* #E4E3DC  Dusty Cotton */
+    --card: 200 14% 19%;              /* #283038 */
+    --card-foreground: 48 5% 88%;
+    --popover: 200 14% 19%;
+    --popover-foreground: 48 5% 88%;
+    --primary: 14 100% 56%;           /* #FF4E20  Otan Red */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 14 100% 56%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 201 12% 24%;             /* #354049 */
+    --muted-foreground: 203 8% 47%;   /* #6d7782 */
+    --accent: 14 100% 56%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 63%;         /* #e06060 */
+    --destructive-foreground: 0 0% 100%;
+    --border: 201 12% 24%;            /* #354049 */
+    --input: 201 12% 24%;
+    --ring: 14 100% 56%;
+
+    --success: 138 38% 58%;           /* #6dbd7a */
+    --success-foreground: 0 0% 100%;
+    --success-muted: 140 18% 15%;     /* #1e2c20 */
+    --warning: 14 100% 56%;           /* #FF4E20 */
+    --warning-muted: 14 35% 16%;      /* #3a2219 */
+    --link: 200 12% 60%;              /* #8a9da8 */
+    --link-muted: 200 14% 18%;        /* #263038 */
+    --tan: 50 7% 83%;                 /* #DAD8CF */
+    --tan-muted: 200 10% 21%;         /* #2d3339 */
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -38,30 +106,57 @@ body {
   background: rgba(0, 0, 0, 0.25);
 }
 
-@media (prefers-color-scheme: dark) {
-  ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.12);
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.2);
-  }
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
 }
 
-@layer components {
-  .input-base {
-    @apply w-full rounded-md px-3 py-2 text-sm;
-    border: 1px solid transparent;
-    outline: none;
-  }
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
 
-  .input-base:focus {
-    outline: none;
-    box-shadow: 0 0 0 2px rgba(173, 78, 26, 0.3);
-  }
+/* Gradient accent button */
+.btn-gradient {
+  background: linear-gradient(135deg, #B83312 0%, #d63b15 100%);
+  box-shadow: 0 2px 8px rgba(184, 51, 18, 0.25);
+  transition: filter 0.15s, box-shadow 0.15s;
+}
+.btn-gradient:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 4px 14px rgba(184, 51, 18, 0.35);
+}
+.btn-gradient:active {
+  filter: brightness(0.95);
+}
 
-  .input-base:disabled {
-    cursor: not-allowed;
-    opacity: 0.5;
-  }
+.dark .btn-gradient {
+  background: linear-gradient(135deg, #FF4E20 0%, #ff6a3d 100%);
+  box-shadow: 0 2px 8px rgba(255, 78, 32, 0.3);
+}
+.dark .btn-gradient:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 4px 14px rgba(255, 78, 32, 0.4);
+}
+
+/* Gradient accent — subtle / muted variant for secondary actions */
+.btn-gradient-subtle {
+  background: linear-gradient(135deg, rgba(184,51,18,0.1) 0%, rgba(214,59,21,0.15) 100%);
+  transition: filter 0.15s;
+}
+.btn-gradient-subtle:hover {
+  filter: brightness(0.95);
+}
+
+.dark .btn-gradient-subtle {
+  background: linear-gradient(135deg, rgba(255,78,32,0.12) 0%, rgba(255,106,61,0.18) 100%);
+}
+.dark .btn-gradient-subtle:hover {
+  filter: brightness(1.1);
+}
+
+/* Storage bar gradient */
+.gradient-storage {
+  background: linear-gradient(90deg, #B83312 0%, #FF4E20 100%);
+}
+.dark .gradient-storage {
+  background: linear-gradient(90deg, #FF4E20 0%, #ff6a3d 100%);
 }

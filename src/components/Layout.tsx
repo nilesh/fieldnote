@@ -11,6 +11,15 @@ const nav = [
 export default function Layout() {
   const { t, dark, toggle } = useThemeStore();
 
+  // Gradient backgrounds inspired by MP020 reference images
+  const sidebarBg = dark
+    ? "linear-gradient(180deg, #141a1f 0%, #1a2028 60%, #1d242c 100%)"
+    : "linear-gradient(180deg, #E4E3DC 0%, #ddd8cc 50%, #d8d2c4 100%)";
+
+  const mainBg = dark
+    ? "linear-gradient(170deg, #1F282E 0%, #232d34 50%, #262f36 100%)"
+    : "linear-gradient(170deg, #DAD8CF 0%, #d7d4ca 50%, #d4d0c4 100%)";
+
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden", background: t.bg }}>
       {/* Sidebar */}
@@ -20,7 +29,8 @@ export default function Layout() {
           minWidth: 230,
           display: "flex",
           flexDirection: "column",
-          background: t.bgSb,
+          background: sidebarBg,
+          borderRight: `1px solid ${dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"}`,
           padding: "16px 12px 12px",
           userSelect: "none",
         }}
@@ -32,14 +42,19 @@ export default function Layout() {
               width: 32,
               height: 32,
               borderRadius: 8,
-              background: t.ac,
+              background: dark
+                ? "linear-gradient(135deg, #FF4E20 0%, #ff6a3d 100%)"
+                : "linear-gradient(135deg, #B83312 0%, #d63b15 100%)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               flexShrink: 0,
+              boxShadow: dark
+                ? "0 2px 8px rgba(255,78,32,0.3)"
+                : "0 2px 8px rgba(184,51,18,0.25)",
             }}
           >
-            <Mic size={17} color={t.acT} />
+            <Mic size={17} color="#ffffff" />
           </div>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: t.txSA, lineHeight: 1.2 }}>FieldNote</div>
@@ -58,7 +73,7 @@ export default function Layout() {
             padding: "7px 10px",
             borderRadius: 6,
             border: "none",
-            background: dark ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.1)",
+            background: dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)",
             color: t.txS,
             fontSize: 13,
             cursor: "pointer",
@@ -68,12 +83,12 @@ export default function Layout() {
           onMouseEnter={(e) => {
             (e.currentTarget as HTMLButtonElement).style.background = dark
               ? "rgba(255,255,255,0.1)"
-              : "rgba(255,255,255,0.15)";
+              : "rgba(0,0,0,0.09)";
           }}
           onMouseLeave={(e) => {
             (e.currentTarget as HTMLButtonElement).style.background = dark
               ? "rgba(255,255,255,0.06)"
-              : "rgba(255,255,255,0.1)";
+              : "rgba(0,0,0,0.05)";
           }}
         >
           <Search size={14} />
@@ -100,14 +115,14 @@ export default function Layout() {
                 background: isActive
                   ? dark
                     ? "rgba(255,255,255,0.1)"
-                    : "rgba(255,255,255,0.12)"
+                    : "rgba(0,0,0,0.07)"
                   : "transparent",
                 transition: "background 0.15s, color 0.15s",
               })}
               onMouseEnter={(e) => {
                 const el = e.currentTarget as HTMLAnchorElement;
                 if (!el.classList.contains("active")) {
-                  el.style.background = dark ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.07)";
+                  el.style.background = dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)";
                 }
               }}
               onMouseLeave={(e) => {
@@ -173,7 +188,7 @@ export default function Layout() {
           onMouseEnter={(e) => {
             (e.currentTarget as HTMLButtonElement).style.background = dark
               ? "rgba(255,255,255,0.06)"
-              : "rgba(255,255,255,0.07)";
+              : "rgba(0,0,0,0.04)";
           }}
           onMouseLeave={(e) => {
             (e.currentTarget as HTMLButtonElement).style.background = "transparent";
@@ -189,7 +204,7 @@ export default function Layout() {
         style={{
           flex: 1,
           overflow: "auto",
-          background: t.bg,
+          background: mainBg,
         }}
       >
         <div

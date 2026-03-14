@@ -1673,7 +1673,8 @@ export default function ImportWizard({
             {sourceMode === "upload" && uploadPending && (
               <button
                 onClick={handleUploadFiles}
-                style={{ ...buttonBase, background: t.ac, color: t.acT }}
+                className="btn-gradient"
+                style={{ ...buttonBase, color: "#fff" }}
               >
                 <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <Upload style={{ width: 14, height: 14 }} />
@@ -1695,7 +1696,8 @@ export default function ImportWizard({
             {sourceMode === "device" && transferStatus === "idle" && deviceSelected.size > 0 && (
               <button
                 onClick={handleDeviceTransfer}
-                style={{ ...buttonBase, background: t.ac, color: t.acT }}
+                className="btn-gradient"
+                style={{ ...buttonBase, color: "#fff" }}
               >
                 <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <Download style={{ width: 14, height: 14 }} />
@@ -1769,7 +1771,8 @@ export default function ImportWizard({
             </button>
             <button
               onClick={() => setStep(4)}
-              style={{ ...buttonBase, background: t.ac, color: t.acT }}
+              className="btn-gradient"
+              style={{ ...buttonBase, color: "#fff" }}
             >
               {taggedCount > 0
                 ? `Continue with ${taggedCount} tagged`

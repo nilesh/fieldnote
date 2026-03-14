@@ -1,57 +1,23 @@
 import { useState, useEffect } from "react";
-import { Save, ExternalLink } from "lucide-react";
+import { Save, Eye, EyeOff } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useThemeStore } from "@/stores/themeStore";
 import type { AppSettings } from "@/types";
-import type { Theme } from "@/lib/theme";
 
-// ─── Toggle Component ─────────────────────────────────────────────────────────
-
-function Toggle({
-  checked,
-  onChange,
-  t,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  t: Theme;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      style={{
-        width: 44,
-        height: 24,
-        borderRadius: 12,
-        background: checked ? t.ac : t.bgA,
-        position: "relative",
-        flexShrink: 0,
-        transition: "background 0.2s",
-        border: "none",
-        cursor: "pointer",
-        padding: 0,
-      }}
-    >
-      <span
-        style={{
-          display: "block",
-          width: 18,
-          height: 18,
-          borderRadius: 9,
-          background: "#ffffff",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-          position: "absolute",
-          top: 3,
-          left: checked ? 23 : 3,
-          transition: "left 0.2s",
-        }}
-      />
-    </button>
-  );
-}
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 
 // ─── Settings Row Component ───────────────────────────────────────────────────
 
@@ -59,59 +25,59 @@ function SettingsRow({
   label,
   description,
   children,
-  t,
+  noBorder,
 }: {
   label: string;
   description?: string;
   children: React.ReactNode;
-  t: Theme;
+  noBorder?: boolean;
 }) {
   return (
-    <div
-      className="flex items-center justify-between gap-4 py-3"
-      style={{ borderBottom: `1px solid ${t.bdL}` }}
-    >
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium" style={{ color: t.tx }}>{label}</p>
-        {description && (
-          <p className="mt-0.5 text-xs" style={{ color: t.txM }}>{description}</p>
-        )}
+    <>
+      <div className="flex items-center justify-between gap-4 py-3">
+        <div className="flex-1 min-w-0">
+          <Label className="text-sm font-medium text-foreground">{label}</Label>
+          {description && (
+            <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+          )}
+        </div>
+        <div className="shrink-0">{children}</div>
       </div>
-      <div className="shrink-0">{children}</div>
-    </div>
+      {!noBorder && <Separator />}
+    </>
   );
 }
 
-// ─── Section Card Component ───────────────────────────────────────────────────
+// ─── API Key Input ────────────────────────────────────────────────────────────
 
-function SectionCard({
-  title,
-  children,
-  t,
+function ApiKeyInput({
+  value,
+  onChange,
+  placeholder,
 }: {
-  title: string;
-  children: React.ReactNode;
-  t: Theme;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
 }) {
+  const [visible, setVisible] = useState(false);
+
   return (
-    <div>
-      <h2
-        className="mb-2 text-xs font-semibold uppercase tracking-wider"
-        style={{ color: t.txM }}
+    <div className="flex items-center gap-2">
+      <Input
+        type={visible ? "text" : "password"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="min-w-[260px] font-mono text-xs"
+      />
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => setVisible(!visible)}
+        className="shrink-0"
       >
-        {title}
-      </h2>
-      <div
-        className="px-5"
-        style={{
-          background: t.bgC,
-          border: `1px solid ${t.bd}`,
-          borderRadius: 14,
-          boxShadow: t.sh,
-        }}
-      >
-        {children}
-      </div>
+        {visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+      </Button>
     </div>
   );
 }
@@ -120,7 +86,7 @@ function SectionCard({
 
 export default function SettingsPage() {
   const { settings, save } = useSettingsStore();
-  const { t } = useThemeStore();
+  useThemeStore(); // keep store subscription active
   const [form, setForm] = useState({ ...settings });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -134,7 +100,6 @@ export default function SettingsPage() {
     const next = { ...form, [key]: value };
     setForm(next);
     setSaved(false);
-    // Auto-save on change
     save(next);
   };
 
@@ -149,173 +114,264 @@ export default function SettingsPage() {
     }
   };
 
-  // Styled select
-  const selectStyle: React.CSSProperties = {
-    background: t.bgI,
-    color: t.tx,
-    border: `1px solid ${t.bd}`,
-    borderRadius: 8,
-    padding: "6px 10px",
-    fontSize: 13,
-    outline: "none",
-    minWidth: 180,
-  };
+  // Available summary models per provider
+  const summaryModels =
+    form.defaultSummaryProvider === "openai"
+      ? [
+          { value: "gpt-4o", label: "GPT-4o" },
+          { value: "gpt-4o-mini", label: "GPT-4o Mini" },
+        ]
+      : [
+          { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
+          { value: "claude-opus-4", label: "Claude Opus 4" },
+        ];
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden" style={{ background: t.bg, color: t.tx }}>
+    <div className="flex flex-1 flex-col overflow-hidden text-foreground">
       {/* Header */}
       <div className="flex items-center gap-3 px-6 py-5">
-        <h1 className="text-xl font-semibold" style={{ color: t.tx }}>Settings</h1>
+        <h1 className="text-xl font-semibold text-foreground">Settings</h1>
         <div className="ml-auto">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-50"
-            style={{ background: t.ac, color: t.acT }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = t.acH)}
-            onMouseLeave={(e) => (e.currentTarget.style.background = t.ac)}
-          >
+          <Button variant="gradient" onClick={handleSave} disabled={saving} size="sm">
             <Save className="h-3.5 w-3.5" />
             {saved ? "Saved!" : saving ? "Saving..." : "Save"}
-          </button>
+          </Button>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-2xl space-y-6 px-6 pb-8">
 
+          {/* ── API Keys Section ────────────────────────────────────────── */}
+          <div>
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              API Keys
+            </h2>
+            <Card>
+              <CardContent className="px-5 py-0">
+                <SettingsRow
+                  label="OpenAI API Key"
+                  description="Required for Whisper transcription and GPT models"
+                >
+                  <ApiKeyInput
+                    value={form.openaiApiKey}
+                    onChange={(v) => set("openaiApiKey", v)}
+                    placeholder="sk-..."
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label="Anthropic API Key"
+                  description="Required for Claude models"
+                  noBorder
+                >
+                  <ApiKeyInput
+                    value={form.anthropicApiKey}
+                    onChange={(v) => set("anthropicApiKey", v)}
+                    placeholder="sk-ant-..."
+                  />
+                </SettingsRow>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* ── AI Models Section ───────────────────────────────────────── */}
+          <div>
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              AI Models
+            </h2>
+            <Card>
+              <CardContent className="px-5 py-0">
+                <SettingsRow
+                  label="Transcription model"
+                  description="Model used for speech-to-text"
+                >
+                  <Select
+                    value={form.transcriptionModel}
+                    onValueChange={(v) => set("transcriptionModel", v as AppSettings["transcriptionModel"])}
+                  >
+                    <SelectTrigger className="min-w-[180px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="whisper-1">Whisper 1 (OpenAI)</SelectItem>
+                      <SelectItem value="whisper-large-v3">Whisper Large v3</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </SettingsRow>
+                <SettingsRow
+                  label="Summary provider"
+                  description="LLM provider for generating meeting summaries"
+                >
+                  <Select
+                    value={form.defaultSummaryProvider}
+                    onValueChange={(v) => {
+                      const provider = v as AppSettings["defaultSummaryProvider"];
+                      set("defaultSummaryProvider", provider);
+                      // Reset model to default for provider
+                      const defaultModel = provider === "openai" ? "gpt-4o" : "claude-sonnet-4-5";
+                      set("defaultSummaryModel", defaultModel as AppSettings["defaultSummaryModel"]);
+                    }}
+                  >
+                    <SelectTrigger className="min-w-[180px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="anthropic">Anthropic</SelectItem>
+                      <SelectItem value="openai">OpenAI</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </SettingsRow>
+                <SettingsRow
+                  label="Summary model"
+                  description="Specific model for summarization"
+                  noBorder
+                >
+                  <Select
+                    value={form.defaultSummaryModel}
+                    onValueChange={(v) => set("defaultSummaryModel", v as AppSettings["defaultSummaryModel"])}
+                  >
+                    <SelectTrigger className="min-w-[180px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {summaryModels.map((m) => (
+                        <SelectItem key={m.value} value={m.value}>
+                          {m.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </SettingsRow>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* ── Processing Section ─────────────────────────────────────── */}
+          <div>
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Processing
+            </h2>
+            <Card>
+              <CardContent className="px-5 py-0">
+                <SettingsRow
+                  label="Language"
+                  description="Primary language for transcription"
+                >
+                  <Select
+                    value={form.defaultLanguage || "auto"}
+                    onValueChange={(v) => set("defaultLanguage", v === "auto" ? "" : v)}
+                  >
+                    <SelectTrigger className="min-w-[180px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="en">English</SelectItem>
+                      <SelectItem value="hi">Hindi</SelectItem>
+                      <SelectItem value="es">Spanish</SelectItem>
+                      <SelectItem value="auto">Auto-detect</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </SettingsRow>
+                <SettingsRow
+                  label="Speaker detection"
+                  description="Identify and label different speakers in recordings"
+                >
+                  <Switch
+                    checked={form.speakerDetection}
+                    onCheckedChange={(v) => set("speakerDetection", v)}
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label="Auto-transcribe on import"
+                  description="Automatically start transcription when a recording is imported"
+                >
+                  <Switch
+                    checked={form.autoTranscribeOnImport}
+                    onCheckedChange={(v) => set("autoTranscribeOnImport", v)}
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label="Auto-summarize after transcription"
+                  description="Automatically generate a summary when transcription completes"
+                  noBorder
+                >
+                  <Switch
+                    checked={form.autoSummarizeAfterTranscript}
+                    onCheckedChange={(v) => set("autoSummarizeAfterTranscript", v)}
+                  />
+                </SettingsRow>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* ── Summary Prompt Section ─────────────────────────────────── */}
+          <div>
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Summary Prompt
+            </h2>
+            <Card>
+              <CardContent className="px-5 py-3">
+                <Label className="text-sm font-medium text-foreground">System prompt</Label>
+                <p className="mt-0.5 mb-2 text-xs text-muted-foreground">
+                  Instructions sent to the LLM when generating meeting summaries
+                </p>
+                <Textarea
+                  value={form.summarySystemPrompt}
+                  onChange={(e) => set("summarySystemPrompt", e.target.value)}
+                  rows={4}
+                  className="text-sm"
+                />
+              </CardContent>
+            </Card>
+          </div>
+
           {/* ── Device Section ──────────────────────────────────────────── */}
-          <SectionCard title="Device" t={t}>
-            <SettingsRow
-              label="Auto-transfer on connect"
-              description="Automatically transfer new recordings when device is connected"
-              t={t}
-            >
-              <Toggle
-                checked={form.autoTransferOnConnect}
-                onChange={(v) => set("autoTransferOnConnect", v)}
-                t={t}
-              />
-            </SettingsRow>
-            <SettingsRow
-              label="Save location"
-              description="Where imported recordings are stored"
-              t={t}
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono" style={{ color: t.tx2 }}>
-                  ~/Documents/FieldNote
-                </span>
-                <button
-                  className="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
-                  style={{ color: t.lk, background: t.lkL }}
+          <div>
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Device
+            </h2>
+            <Card>
+              <CardContent className="px-5 py-0">
+                <SettingsRow
+                  label="Auto-transfer on connect"
+                  description="Automatically transfer new recordings when device is connected"
+                  noBorder
                 >
-                  Change
-                </button>
-              </div>
-            </SettingsRow>
-          </SectionCard>
-
-          {/* ── AI Processing Section ──────────────────────────────────── */}
-          <SectionCard title="AI Processing" t={t}>
-            <SettingsRow
-              label="AI Model"
-              description="Model used for transcription and summarization"
-              t={t}
-            >
-              <select
-                value={form.defaultSummaryModel}
-                onChange={(e) => set("defaultSummaryModel", e.target.value as AppSettings["defaultSummaryModel"])}
-                style={selectStyle}
-              >
-                <option value="claude-sonnet-4-5">Claude Sonnet 4</option>
-                <option value="gpt-4o">GPT-4o</option>
-                <option value="whisper-large-v3">Whisper Large v3</option>
-              </select>
-            </SettingsRow>
-            <SettingsRow
-              label="Speaker detection"
-              description="Identify and label different speakers in recordings"
-              t={t}
-            >
-              <Toggle
-                checked={form.speakerDetection}
-                onChange={(v) => set("speakerDetection", v)}
-                t={t}
-              />
-            </SettingsRow>
-            <SettingsRow
-              label="Language"
-              description="Primary language for transcription"
-              t={t}
-            >
-              <select
-                value={form.defaultLanguage}
-                onChange={(e) => set("defaultLanguage", e.target.value)}
-                style={selectStyle}
-              >
-                <option value="en">English</option>
-                <option value="hi">Hindi</option>
-                <option value="es">Spanish</option>
-                <option value="">Auto-detect</option>
-              </select>
-            </SettingsRow>
-            <div className="py-3">
-              <p className="text-xs" style={{ color: t.txM }}>
-                Accepted formats: .hda, .wav, .mp3, .m4a, .ogg
-              </p>
-            </div>
-          </SectionCard>
-
-          {/* ── Integrations Section ───────────────────────────────────── */}
-          <SectionCard title="Integrations" t={t}>
-            {[
-              { name: "Google Calendar", desc: "Sync meetings and auto-match recordings" },
-              { name: "Slack", desc: "Share summaries and action items to channels" },
-              { name: "Notion", desc: "Export notes and summaries to Notion pages" },
-            ].map((integration, i, arr) => (
-              <div
-                key={integration.name}
-                className="flex items-center justify-between gap-4 py-3"
-                style={i < arr.length - 1 ? { borderBottom: `1px solid ${t.bdL}` } : undefined}
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium" style={{ color: t.tx }}>
-                    {integration.name}
-                  </p>
-                  <p className="mt-0.5 text-xs" style={{ color: t.txM }}>
-                    {integration.desc}
-                  </p>
-                </div>
-                <button
-                  className="flex items-center gap-1.5 shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
-                  style={{ color: t.lk, background: t.lkL }}
-                  onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
-                  onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  Connect
-                </button>
-              </div>
-            ))}
-          </SectionCard>
+                  <Switch
+                    checked={form.autoTransferOnConnect}
+                    onCheckedChange={(v) => set("autoTransferOnConnect", v)}
+                  />
+                </SettingsRow>
+              </CardContent>
+            </Card>
+          </div>
 
           {/* ── Notifications Section ──────────────────────────────────── */}
-          <SectionCard title="Notifications" t={t}>
-            <div className="py-1">
-              <SettingsRow
-                label="Desktop notifications"
-                description="Show system notifications for completed transcriptions and imports"
-                t={t}
-              >
-                <Toggle
-                  checked={form.desktopNotifications}
-                  onChange={(v) => set("desktopNotifications", v)}
-                  t={t}
-                />
-              </SettingsRow>
-            </div>
-          </SectionCard>
+          <div>
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Notifications
+            </h2>
+            <Card>
+              <CardContent className="px-5 py-0">
+                <SettingsRow
+                  label="Desktop notifications"
+                  description="Show system notifications for completed transcriptions and imports"
+                  noBorder
+                >
+                  <Switch
+                    checked={form.desktopNotifications}
+                    onCheckedChange={(v) => set("desktopNotifications", v)}
+                  />
+                </SettingsRow>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="py-3">
+            <p className="text-xs text-muted-foreground">
+              Accepted audio formats: .hda, .wav, .mp3, .m4a, .ogg
+            </p>
+          </div>
 
         </div>
       </div>

@@ -137,16 +137,14 @@ export type TranscriptionModel = "whisper-1" | "whisper-large-v3";
 export type SummaryModel = "gpt-4o" | "gpt-4o-mini" | "claude-opus-4" | "claude-sonnet-4-5";
 
 export interface AppSettings {
-  // LLM keys
+  // API keys
   openaiApiKey: string;
   anthropicApiKey: string;
+
+  // Model selection
   defaultSummaryProvider: LLMProvider;
   defaultSummaryModel: SummaryModel;
   transcriptionModel: TranscriptionModel;
-
-  // HiNotes (optional)
-  hinotesAccessToken: string;
-  hinotesEnabled: boolean;
 
   // Processing
   autoTranscribeOnImport: boolean;
@@ -170,8 +168,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultSummaryProvider: "anthropic",
   defaultSummaryModel: "claude-sonnet-4-5",
   transcriptionModel: "whisper-1",
-  hinotesAccessToken: "",
-  hinotesEnabled: false,
   autoTranscribeOnImport: false,
   autoSummarizeAfterTranscript: false,
   defaultLanguage: "en",

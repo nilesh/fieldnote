@@ -1,9 +1,16 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search } from "lucide-react";
-import { useThemeStore } from "@/stores/themeStore";
 import { useNotesStore } from "@/stores/notesStore";
 import { searchNotes } from "@/lib/db";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import type { Note } from "@/types";
 
 function formatRelDate(ms: number): string {
@@ -28,7 +35,6 @@ export default function SearchModal({
   open: boolean;
   onClose: () => void;
 }) {
-  const { t, dark: dk } = useThemeStore();
   const notes = useNotesStore((s) => s.notes);
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -56,134 +62,71 @@ export default function SearchModal({
     return () => clearTimeout(timer);
   }, [query, open, notes]);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.5)",
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "center",
-        paddingTop: "15vh",
-        zIndex: 1000,
-        backdropFilter: "blur(6px)",
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) onClose();
       }}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 560,
-          background: t.bgC,
-          borderRadius: 16,
-          border: `1px solid ${t.bd}`,
-          boxShadow: dk
-            ? "0 8px 24px rgba(0,0,0,0.5),0 0 0 1px rgba(255,255,255,0.03)"
-            : "0 24px 80px rgba(25,31,69,0.25)",
-          overflow: "hidden",
-        }}
+      <DialogContent
+        className="top-[15vh] translate-y-0 max-w-[560px] gap-0 overflow-hidden rounded-2xl border bg-card p-0 shadow-lg data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-top-[48%] [&>button]:hidden"
       >
+        <VisuallyHidden.Root>
+          <DialogTitle>Search</DialogTitle>
+        </VisuallyHidden.Root>
+
         {/* Search input */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            padding: "14px 18px",
-            borderBottom: `1px solid ${t.bd}`,
-          }}
-        >
-          <Search style={{ color: t.txM, width: 18, height: 18, flexShrink: 0 }} />
-          <input
+        <div className="flex items-center gap-2.5 border-b px-[18px] py-3.5">
+          <Search className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
+          <Input
             ref={inputRef}
             autoFocus
             placeholder="Search meetings, transcripts..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            style={{
-              flex: 1,
-              border: "none",
-              outline: "none",
-              fontSize: 15,
-              background: "transparent",
-              color: t.tx,
-              fontFamily: "inherit",
-            }}
+            className="h-auto border-none bg-transparent p-0 text-[15px] text-foreground shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
           />
           <kbd
             onClick={onClose}
-            style={{
-              fontSize: 11,
-              color: t.txM,
-              background: t.bgA,
-              padding: "3px 8px",
-              borderRadius: 4,
-              cursor: "pointer",
-            }}
+            className="cursor-pointer shrink-0 rounded bg-muted px-2 py-[3px] text-[11px] text-muted-foreground"
           >
             ESC
           </kbd>
         </div>
 
         {/* Results */}
-        <div style={{ maxHeight: 400, overflow: "auto", padding: 8 }}>
-          {results.length === 0 ? (
-            <div
-              style={{
-                textAlign: "center",
-                padding: 48,
-                color: t.txM,
-                fontSize: 14,
-              }}
-            >
-              No results found
-            </div>
-          ) : (
-            results.map((m) => (
-              <div
-                key={m.id}
-                onClick={() => {
-                  navigate(`/meetings/${m.id}`);
-                  onClose();
-                  setQuery("");
-                }}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 8,
-                  cursor: "pointer",
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLDivElement).style.background = t.bgH;
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLDivElement).style.background = "transparent";
-                }}
-              >
-                <div style={{ fontSize: 14, fontWeight: 500, color: t.tx }}>
-                  {m.title || m.filename}
-                </div>
-                <div style={{ fontSize: 12, color: t.tx2, marginTop: 2 }}>
-                  {formatRelDate(m.recordedAt ?? m.createdAt)}
-                  {m.durationMs ? ` · ${formatDur(m.durationMs)}` : ""}
-                  {m.folderId ? ` · ${m.folderId}` : ""}
-                </div>
+        <ScrollArea className="max-h-[400px]">
+          <div className="p-2">
+            {results.length === 0 ? (
+              <div className="py-12 text-center text-sm text-muted-foreground">
+                No results found
               </div>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
+            ) : (
+              results.map((m) => (
+                <div
+                  key={m.id}
+                  onClick={() => {
+                    navigate(`/meetings/${m.id}`);
+                    onClose();
+                    setQuery("");
+                  }}
+                  className="cursor-pointer rounded-lg px-3.5 py-2.5 hover:bg-accent hover:text-accent-foreground"
+                >
+                  <div className="text-sm font-medium text-foreground">
+                    {m.title || m.filename}
+                  </div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    {formatRelDate(m.recordedAt ?? m.createdAt)}
+                    {m.durationMs ? ` · ${formatDur(m.durationMs)}` : ""}
+                    {m.folderId ? ` · ${m.folderId}` : ""}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
   );
 }

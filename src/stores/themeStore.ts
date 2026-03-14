@@ -23,6 +23,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   toggle: () => {
     const next = !get().dark;
     set({ dark: next, t: next ? darkTheme : lightTheme });
+    document.documentElement.classList.toggle("dark", next);
     getStore().then((s) => { s.set("darkMode", next); s.save(); });
   },
 
@@ -30,5 +31,6 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     const store = await getStore();
     const dark = (await store.get<boolean>("darkMode")) ?? false;
     set({ dark, t: dark ? darkTheme : lightTheme });
+    document.documentElement.classList.toggle("dark", dark);
   },
 }));

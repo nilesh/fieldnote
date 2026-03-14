@@ -226,7 +226,7 @@ export default function DevicePage() {
   };
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden" style={{ background: t.bg, color: t.tx }}>
+    <div className="flex flex-1 flex-col overflow-hidden" style={{ color: t.tx }}>
       {/* Page header */}
       <div className="flex items-center gap-3 px-6 py-5">
         <h1 className="text-xl font-semibold" style={{ color: t.tx }}>Device Manager</h1>
@@ -280,10 +280,7 @@ export default function DevicePage() {
           </div>
           <button
             onClick={handleConnect}
-            className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-colors"
-            style={{ background: t.ac, color: t.acT }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = t.acH)}
-            onMouseLeave={(e) => (e.currentTarget.style.background = t.ac)}
+            className="btn-gradient flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white"
           >
             <Plug className="h-4 w-4" />
             Connect device
@@ -341,10 +338,10 @@ export default function DevicePage() {
                   style={{ background: t.bgA }}
                 >
                   <div
-                    className="h-full rounded-full transition-all"
+                    className={`h-full rounded-full transition-all ${storagePercent > 90 ? "" : "gradient-storage"}`}
                     style={{
                       width: `${storagePercent}%`,
-                      background: storagePercent > 90 ? t.err : t.ac,
+                      ...(storagePercent > 90 ? { background: t.err } : {}),
                     }}
                   />
                 </div>
@@ -372,10 +369,7 @@ export default function DevicePage() {
                 <button
                   onClick={handleImport}
                   disabled={importing}
-                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40"
-                  style={{ background: t.ac, color: t.acT }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = t.acH)}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = t.ac)}
+                  className="btn-gradient flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
                 >
                   <Download className="h-3.5 w-3.5" />
                   {importing ? "Transferring..." : "Transfer"}
@@ -603,10 +597,8 @@ export default function DevicePage() {
                                     }
                                   })();
                                 }}
-                                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors"
-                                style={{ background: t.acL, color: t.ac }}
-                                onMouseEnter={(e) => (e.currentTarget.style.background = t.ac, e.currentTarget.style.color = t.acT)}
-                                onMouseLeave={(e) => (e.currentTarget.style.background = t.acL, e.currentTarget.style.color = t.ac)}
+                                className="btn-gradient-subtle inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold"
+                                style={{ color: t.ac }}
                               >
                                 <Download className="h-3 w-3" />
                                 Transfer
