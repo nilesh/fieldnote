@@ -9,6 +9,7 @@ import MeetingDetailPage from "@/pages/MeetingDetailPage";
 import DevicePage from "@/pages/DevicePage";
 import SettingsPage from "@/pages/SettingsPage";
 import SearchModal from "@/components/SearchModal";
+import ImportWizard from "@/components/ImportWizard";
 
 export default function App() {
   const loadSettings = useSettingsStore((s) => s.load);
@@ -17,6 +18,7 @@ export default function App() {
   const t = useThemeStore((s) => s.t);
   const [ready, setReady] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   useEffect(() => {
     Promise.all([loadSettings(), loadNotes(), loadTheme()]).finally(() =>
@@ -35,19 +37,25 @@ export default function App() {
     []
   );
 
-  // Listen for custom "open-search" event from sidebar
+  // Listen for custom events from sidebar / dashboard
   const handleOpenSearch = useCallback(() => {
     setSearchOpen(true);
+  }, []);
+
+  const handleOpenImport = useCallback(() => {
+    setImportOpen(true);
   }, []);
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("open-search", handleOpenSearch);
+    window.addEventListener("open-import", handleOpenImport);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("open-search", handleOpenSearch);
+      window.removeEventListener("open-import", handleOpenImport);
     };
-  }, [handleKeyDown, handleOpenSearch]);
+  }, [handleKeyDown, handleOpenSearch, handleOpenImport]);
 
   if (!ready) {
     return (
@@ -87,6 +95,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <ImportWizard open={importOpen} onClose={() => setImportOpen(false)} />
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<Navigate to="/meetings" replace />} />

@@ -1,8 +1,12 @@
 import { useState, useCallback, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { Usb, RefreshCw, Download, CheckCircle2, AlertCircle, Plug, ArrowUp, ArrowDown } from "lucide-react";
+import {
+  Usb, RefreshCw, Download, CheckCircle2, AlertCircle,
+  Plug, ArrowUp, ArrowDown, FileText, Trash2,
+} from "lucide-react";
 import { useNotesStore } from "@/stores/notesStore";
+import { useThemeStore } from "@/stores/themeStore";
 import { getNoteBySignature } from "@/lib/db";
 import { formatDuration, cn } from "@/lib/utils";
 import type { NoteState } from "@/types";
@@ -18,13 +22,13 @@ interface UsbDeviceInfo {
 
 interface UsbFileEntry {
   name: string;
-  size: number;     // bytes on device
-  signature: string; // MD5 hex from device
+  size: number;
+  signature: string;
 }
 
 interface DisplayFile extends UsbFileEntry {
-  durationMs: number;   // estimated from file size
-  recordedAt: number;   // ms timestamp parsed from filename
+  durationMs: number;
+  recordedAt: number;
   alreadyImported: boolean;
 }
 
@@ -39,16 +43,13 @@ const MONTH_MAP: Record<string, string> = {
   Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12",
 };
 
-/** Parse timestamp from filename like "2025Nov03-132512-Rec65.hda" or "20260309-141851-Rec25.hda" */
 function parseRecordedAt(filename: string): number {
-  // Text month format: 2025Nov03-132512
   const tm = filename.match(/^(\d{4})([A-Z][a-z]{2})(\d{2})-(\d{2})(\d{2})(\d{2})/);
   if (tm) {
     const [, y, mon, d, h, mi, s] = tm;
     const mo = MONTH_MAP[mon] ?? "01";
     return new Date(`${y}-${mo}-${d}T${h}:${mi}:${s}`).getTime();
   }
-  // Numeric format: 20260309-141851
   const nm = filename.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/);
   if (nm) {
     const [, y, mo, d, h, mi, s] = nm;
@@ -57,7 +58,6 @@ function parseRecordedAt(filename: string): number {
   return Date.now();
 }
 
-/** Estimate duration in ms from .hda file size (4-channel OPUS at ~256kbps = 32 bytes/ms) */
 function estimateDuration(size: number, filename: string): number {
   if (filename.toLowerCase().endsWith(".hda")) return Math.round((size / 32) * 4);
   if (filename.toLowerCase().endsWith(".wav")) return Math.round(size / 32);
@@ -72,6 +72,7 @@ type SortDir = "asc" | "desc";
 
 export default function DevicePage() {
   const { addNote } = useNotesStore();
+  const { t } = useThemeStore();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -110,7 +111,6 @@ export default function DevicePage() {
     setDeviceInfo(null);
 
     try {
-      // Single USB session: connect, get info, and list files
       const [info, rawFiles] = await invoke<[UsbDeviceInfo, UsbFileEntry[]]>("usb_connect_and_scan");
       setDeviceInfo(info);
 
@@ -127,8 +127,7 @@ export default function DevicePage() {
       );
 
       setFiles(displayFiles);
-      setError(null); // clear any stale error from prior attempts
-
+      setError(null);
       setSelected(new Set());
     } catch (err) {
       setError(String(err));
@@ -137,7 +136,6 @@ export default function DevicePage() {
     }
   }, []);
 
-  // Auto-connect when navigated from Notes page
   useEffect(() => {
     if ((location.state as any)?.autoConnect && !deviceInfo && !scanning) {
       handleConnect();
@@ -157,7 +155,7 @@ export default function DevicePage() {
   const selectNew = () =>
     setSelected(new Set(files.filter((f) => !f.alreadyImported).map((f) => f.name)));
   const selectAll = () => setSelected(new Set(files.map((f) => f.name)));
-  const clearAll  = () => setSelected(new Set());
+  const clearAll = () => setSelected(new Set());
 
   // ── Import ──────────────────────────────────────────────────────────────────
   const handleImport = async () => {
@@ -169,21 +167,17 @@ export default function DevicePage() {
     for (const file of toImport) {
       setImportResults((prev) => ({ ...prev, [file.name]: "importing" }));
       try {
-        // 1. Check by device-provided MD5 — skip if already imported
         const existing = await getNoteBySignature(file.signature).catch(() => null);
         if (existing) {
           setImportResults((prev) => ({ ...prev, [file.name]: "done" }));
           continue;
         }
 
-        // 2. Download from device and save to disk in one backend call
-        //    (avoids serializing large byte arrays over IPC)
         const savedPath: string = await invoke("usb_download_and_save", {
           name: file.name,
           length: file.size,
         });
 
-        // 3. Insert into DB via store (handles both DB + Zustand)
         await addNote({
           filename: file.name,
           filePath: savedPath,
@@ -210,7 +204,6 @@ export default function DevicePage() {
     }
 
     setImporting(false);
-    // Navigate to Notes page after successful import
     navigate("/meetings");
   };
 
@@ -219,72 +212,78 @@ export default function DevicePage() {
   const newCount = files.filter((f) => !f.alreadyImported).length;
   const connected = deviceInfo !== null;
 
+  // Storage estimate
+  const totalUsedBytes = files.reduce((sum, f) => sum + f.size, 0);
+  const totalCapacityMB = 512;
+  const usedMB = totalUsedBytes / (1024 * 1024);
+  const storagePercent = Math.min((usedMB / totalCapacityMB) * 100, 100);
+
+  const SortIcon = ({ col }: { col: SortKey }) => {
+    if (sortKey !== col) return null;
+    return sortDir === "asc"
+      ? <ArrowUp className="h-3 w-3" style={{ color: t.tx2 }} />
+      : <ArrowDown className="h-3 w-3" style={{ color: t.tx2 }} />;
+  };
+
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center gap-3 border-b border-border px-6 py-4">
-        <Usb className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-lg font-semibold">Device</h1>
-
+    <div className="flex flex-1 flex-col overflow-hidden" style={{ background: t.bg, color: t.tx }}>
+      {/* Page header */}
+      <div className="flex items-center gap-3 px-6 py-5">
+        <h1 className="text-xl font-semibold" style={{ color: t.tx }}>Device Manager</h1>
         {connected && (
-          <>
-            <span className="ml-1 text-sm text-muted-foreground">
-              {deviceInfo.model} · {deviceInfo.sn} · fw {deviceInfo.versionCode}
-            </span>
-            <button
-              onClick={handleRefresh}
-              disabled={scanning}
-              className="ml-auto rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
-              title="Refresh"
-            >
-              <RefreshCw className={cn("h-4 w-4", scanning && "animate-spin")} />
-            </button>
-          </>
-        )}
-
-        {!connected && (
           <button
-            onClick={handleConnect}
+            onClick={handleRefresh}
             disabled={scanning}
-            className="ml-auto flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            className="ml-auto flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-40"
+            style={{ color: t.ac, background: t.acL }}
+            title="Refresh"
           >
-            <Plug className="h-4 w-4" />
-            {scanning ? "Connecting…" : "Connect device"}
+            <RefreshCw className={cn("h-3.5 w-3.5", scanning && "animate-spin")} />
+            Refresh
           </button>
         )}
       </div>
 
       {/* Error banner */}
       {error && (
-        <div className="mx-6 mt-4 flex items-start gap-2 rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+        <div
+          className="mx-6 mb-4 flex items-start gap-3 rounded-xl px-4 py-3"
+          style={{ background: t.errL, border: `1px solid ${t.err}30` }}
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" style={{ color: t.err }} />
           <div>
-            <p className="font-medium">Connection failed</p>
-            <p className="mt-0.5 text-xs font-mono opacity-80">{error}</p>
-            <p className="mt-1 text-xs opacity-70">
+            <p className="text-sm font-medium" style={{ color: t.err }}>Connection failed</p>
+            <p className="mt-0.5 font-mono text-xs" style={{ color: t.err, opacity: 0.8 }}>{error}</p>
+            <p className="mt-1 text-xs" style={{ color: t.tx2 }}>
               Make sure HiDock P1 is connected via USB and the HiNotes app is closed.
             </p>
           </div>
         </div>
       )}
 
-      {/* Not connected */}
-      {!connected && !scanning && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
-          <div className="rounded-full bg-secondary p-5">
-            <Usb className="h-8 w-8 text-muted-foreground" />
+      {/* Not connected state */}
+      {!connected && !scanning && !error && (
+        <div className="flex flex-1 flex-col items-center justify-center gap-5 text-center px-6">
+          <div
+            className="flex h-20 w-20 items-center justify-center rounded-full"
+            style={{ background: t.bgA }}
+          >
+            <Usb className="h-9 w-9" style={{ color: t.txM }} />
           </div>
           <div>
-            <p className="font-medium">No device connected</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Connect your HiDock P1 via USB, then click Connect.
+            <p className="text-lg font-semibold" style={{ color: t.tx }}>No device connected</p>
+            <p className="mt-1.5 text-sm leading-relaxed" style={{ color: t.tx2 }}>
+              Connect your HiDock P1 via USB, then click the button below.
               <br />
-              Close the HiNotes app first if it's open.
+              Make sure the HiNotes app is closed first.
             </p>
           </div>
           <button
             onClick={handleConnect}
-            className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-colors"
+            style={{ background: t.ac, color: t.acT }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = t.acH)}
+            onMouseLeave={(e) => (e.currentTarget.style.background = t.ac)}
           >
             <Plug className="h-4 w-4" />
             Connect device
@@ -294,152 +293,332 @@ export default function DevicePage() {
 
       {/* Scanning spinner */}
       {scanning && !connected && (
-        <div className="flex flex-1 items-center justify-center">
-          <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+        <div className="flex flex-1 flex-col items-center justify-center gap-3">
+          <RefreshCw className="h-6 w-6 animate-spin" style={{ color: t.ac }} />
+          <p className="text-sm" style={{ color: t.tx2 }}>Connecting to device...</p>
         </div>
       )}
 
-      {/* File list */}
+      {/* Connected view */}
       {connected && (
-        <div className="flex flex-1 flex-col overflow-hidden">
-          {/* Toolbar */}
-          {files.length > 0 && (
-            <div className="flex items-center gap-3 border-b border-border px-6 py-2">
-              <span className="text-sm text-muted-foreground">
-                {files.length} recording{files.length !== 1 ? "s" : ""} — {newCount} new
+        <div className="flex flex-1 flex-col overflow-hidden px-6 pb-6 gap-4">
+          {/* Device status card */}
+          <div
+            className="flex items-center gap-4 p-4"
+            style={{
+              background: t.bgC,
+              border: `1px solid ${t.bd}`,
+              borderRadius: 14,
+              boxShadow: t.sh,
+            }}
+          >
+            <div
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full"
+              style={{ background: t.okL }}
+            >
+              <Usb className="h-5 w-5" style={{ color: t.ok }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold" style={{ color: t.tx }}>
+                  HiDock P1 Device
+                </p>
+                <span
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                  style={{ background: t.okL, color: t.ok }}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: t.ok }} />
+                  Connected
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs" style={{ color: t.tx2 }}>
+                SN: {deviceInfo.sn} &middot; FW {deviceInfo.versionCode}
+              </p>
+              {/* Storage bar */}
+              <div className="mt-2 flex items-center gap-3">
+                <div
+                  className="h-2 flex-1 overflow-hidden rounded-full"
+                  style={{ background: t.bgA }}
+                >
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${storagePercent}%`,
+                      background: storagePercent > 90 ? t.err : t.ac,
+                    }}
+                  />
+                </div>
+                <span className="shrink-0 text-xs tabular-nums" style={{ color: t.tx2 }}>
+                  {usedMB.toFixed(1)} MB / {totalCapacityMB} MB
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Bulk action bar */}
+          {selectedCount > 0 && (
+            <div
+              className="flex items-center gap-3 px-4 py-2.5"
+              style={{
+                background: t.acL,
+                borderRadius: 10,
+                border: `1px solid ${t.ac}20`,
+              }}
+            >
+              <span className="text-sm font-medium" style={{ color: t.ac }}>
+                {selectedCount} selected
               </span>
               <div className="ml-auto flex items-center gap-2">
-                <button onClick={selectNew} className="text-xs text-primary hover:underline">
-                  Select new
+                <button
+                  onClick={handleImport}
+                  disabled={importing}
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40"
+                  style={{ background: t.ac, color: t.acT }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = t.acH)}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = t.ac)}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  {importing ? "Transferring..." : "Transfer"}
                 </button>
-                <span className="text-muted-foreground">·</span>
-                <button onClick={selectAll} className="text-xs text-primary hover:underline">
-                  All
-                </button>
-                <span className="text-muted-foreground">·</span>
-                <button onClick={clearAll} className="text-xs text-primary hover:underline">
-                  None
+                <button
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
+                  style={{ color: t.err, background: t.errL }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
                 </button>
               </div>
-              <button
-                onClick={handleImport}
-                disabled={selectedCount === 0 || importing}
-                className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
-              >
-                <Download className="h-4 w-4" />
-                {importing
-                  ? "Importing…"
-                  : `Import${selectedCount > 0 ? ` ${selectedCount}` : ""}`}
-              </button>
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto">
+          {/* Selection bar */}
+          {files.length > 0 && (
+            <div className="flex items-center gap-3">
+              <span className="text-sm" style={{ color: t.tx2 }}>
+                {files.length} recording{files.length !== 1 ? "s" : ""} &middot; {newCount} new
+              </span>
+              <div className="ml-auto flex items-center gap-1">
+                {[
+                  { label: "Select new", action: selectNew },
+                  { label: "All", action: selectAll },
+                  { label: "None", action: clearAll },
+                ].map((btn) => (
+                  <button
+                    key={btn.label}
+                    onClick={btn.action}
+                    className="rounded-md px-2 py-1 text-xs font-medium transition-colors"
+                    style={{ color: t.lk }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = t.lkL)}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    {btn.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* File table */}
+          <div
+            className="flex-1 overflow-hidden flex flex-col"
+            style={{
+              background: t.bgC,
+              border: `1px solid ${t.bd}`,
+              borderRadius: 14,
+              boxShadow: t.sh,
+            }}
+          >
             {scanning ? (
-              <div className="flex h-full items-center justify-center">
-                <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+              <div className="flex flex-1 items-center justify-center">
+                <RefreshCw className="h-5 w-5 animate-spin" style={{ color: t.ac }} />
               </div>
             ) : files.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-                <p className="font-medium">No recordings found</p>
-                <p className="text-sm text-muted-foreground">
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center p-8">
+                <p className="font-medium" style={{ color: t.tx }}>No recordings found</p>
+                <p className="text-sm" style={{ color: t.tx2 }}>
                   The device is connected but has no recordings.
                 </p>
               </div>
             ) : (
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 border-b border-border bg-background">
-                  <tr className="text-left text-xs font-medium text-muted-foreground">
-                    <th className="w-10 px-4 py-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedCount === files.length && files.length > 0}
-                        onChange={(e) => (e.target.checked ? selectAll() : clearAll())}
-                        className="accent-primary"
-                      />
-                    </th>
-                    <th className="py-2 pr-4">
-                      <button onClick={() => toggleSort("name")} className="inline-flex items-center gap-1 hover:text-foreground">
-                        Filename
-                        {sortKey === "name" && (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
-                      </button>
-                    </th>
-                    <th className="py-2 pr-4">
-                      <button onClick={() => toggleSort("recordedAt")} className="inline-flex items-center gap-1 hover:text-foreground">
-                        Recorded
-                        {sortKey === "recordedAt" && (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
-                      </button>
-                    </th>
-                    <th className="py-2 pr-4">
-                      <button onClick={() => toggleSort("size")} className="inline-flex items-center gap-1 hover:text-foreground">
-                        Size
-                        {sortKey === "size" && (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
-                      </button>
-                    </th>
-                    <th className="py-2 pr-4">
-                      <button onClick={() => toggleSort("durationMs")} className="inline-flex items-center gap-1 hover:text-foreground">
-                        Duration
-                        {sortKey === "durationMs" && (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
-                      </button>
-                    </th>
-                    <th className="py-2 pr-4">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {sortedFiles.map((file) => {
-                    const importStatus = importResults[file.name];
-                    const isDone = importStatus === "done" || file.alreadyImported;
-                    return (
-                      <tr
-                        key={file.name}
-                        className={cn(
-                          "transition-colors hover:bg-secondary/50",
-                          selected.has(file.name) && "bg-accent/30"
-                        )}
-                        onClick={() => !isDone && toggleFile(file.name)}
+              <div className="flex-1 overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0" style={{ background: t.bgC }}>
+                    <tr style={{ borderBottom: `1px solid ${t.bd}` }}>
+                      <th className="w-10 px-4 py-3 text-left">
+                        <input
+                          type="checkbox"
+                          checked={selectedCount === files.length && files.length > 0}
+                          onChange={(e) => (e.target.checked ? selectAll() : clearAll())}
+                          style={{ accentColor: t.ac }}
+                        />
+                      </th>
+                      {([
+                        { key: "name" as SortKey, label: "FILE NAME" },
+                        { key: "size" as SortKey, label: "SIZE" },
+                        { key: "recordedAt" as SortKey, label: "DATE" },
+                        { key: "durationMs" as SortKey, label: "DURATION" },
+                      ]).map(({ key, label }) => (
+                        <th key={key} className="py-3 pr-4 text-left">
+                          <button
+                            onClick={() => toggleSort(key)}
+                            className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider"
+                            style={{ color: t.txM }}
+                          >
+                            {label}
+                            <SortIcon col={key} />
+                          </button>
+                        </th>
+                      ))}
+                      <th
+                        className="py-3 pr-4 text-left text-xs font-semibold uppercase tracking-wider"
+                        style={{ color: t.txM }}
                       >
-                        <td className="px-4 py-2.5">
-                          <input
-                            type="checkbox"
-                            checked={selected.has(file.name)}
-                            disabled={isDone}
-                            onChange={() => toggleFile(file.name)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="accent-primary"
-                          />
-                        </td>
-                        <td className="py-2.5 pr-4 font-mono text-xs">{file.name}</td>
-                        <td className="py-2.5 pr-4 text-muted-foreground">
-                          {new Date(file.recordedAt).toLocaleString()}
-                        </td>
-                        <td className="py-2.5 pr-4 text-muted-foreground tabular-nums">
-                          {file.size ? formatFileSize(file.size) : "—"}
-                        </td>
-                        <td className="py-2.5 pr-4 text-muted-foreground tabular-nums">
-                          {file.durationMs ? formatDuration(file.durationMs) : "—"}
-                        </td>
-                        <td className="py-2.5 pr-4">
-                          {importStatus === "importing" ? (
-                            <span className="flex items-center gap-1 text-xs text-primary">
-                              <RefreshCw className="h-3 w-3 animate-spin" /> Importing…
-                            </span>
-                          ) : isDone ? (
-                            <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
-                              <CheckCircle2 className="h-3 w-3" /> Imported
-                            </span>
-                          ) : importStatus === "error" ? (
-                            <span className="flex items-center gap-1 text-xs text-destructive">
-                              <AlertCircle className="h-3 w-3" /> Error
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">New</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        STATUS
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedFiles.map((file) => {
+                      const importStatus = importResults[file.name];
+                      const isDone = importStatus === "done" || file.alreadyImported;
+                      const isImporting = importStatus === "importing";
+                      const isError = importStatus === "error";
+                      const isSelected = selected.has(file.name);
+
+                      return (
+                        <tr
+                          key={file.name}
+                          className="transition-colors cursor-pointer"
+                          style={{
+                            borderBottom: `1px solid ${t.bdL}`,
+                            background: isSelected ? t.acL : "transparent",
+                          }}
+                          onClick={() => !isDone && toggleFile(file.name)}
+                          onMouseEnter={(e) => {
+                            if (!isSelected) e.currentTarget.style.background = t.bgH;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = isSelected ? t.acL : "transparent";
+                          }}
+                        >
+                          <td className="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              disabled={isDone}
+                              onChange={() => toggleFile(file.name)}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ accentColor: t.ac }}
+                            />
+                          </td>
+                          <td className="py-3 pr-4">
+                            <div className="flex items-center gap-2">
+                              <FileText className="h-4 w-4 shrink-0" style={{ color: t.txM }} />
+                              <span className="font-mono text-xs" style={{ color: t.tx }}>
+                                {file.name}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-3 pr-4 tabular-nums text-xs" style={{ color: t.tx2 }}>
+                            {file.size ? formatFileSize(file.size) : "\u2014"}
+                          </td>
+                          <td className="py-3 pr-4 text-xs" style={{ color: t.tx2 }}>
+                            {new Date(file.recordedAt).toLocaleDateString("en-GB", {
+                              day: "numeric", month: "short", year: "numeric",
+                            })}
+                          </td>
+                          <td className="py-3 pr-4 tabular-nums text-xs" style={{ color: t.tx2 }}>
+                            {file.durationMs ? formatDuration(file.durationMs) : "\u2014"}
+                          </td>
+                          <td className="py-3 pr-4">
+                            {isImporting ? (
+                              <span
+                                className="inline-flex items-center gap-1.5 text-xs font-medium"
+                                style={{ color: t.ac }}
+                              >
+                                <RefreshCw className="h-3 w-3 animate-spin" />
+                                Transferring...
+                              </span>
+                            ) : isDone ? (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate("/meetings");
+                                }}
+                                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors"
+                                style={{ background: t.okL, color: t.ok }}
+                                onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+                                onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                              >
+                                <CheckCircle2 className="h-3 w-3" />
+                                Processed
+                              </button>
+                            ) : isError ? (
+                              <span
+                                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
+                                style={{ background: t.errL, color: t.err }}
+                              >
+                                <AlertCircle className="h-3 w-3" />
+                                Error
+                              </span>
+                            ) : (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelected(new Set([file.name]));
+                                  // Trigger import for this single file
+                                  (async () => {
+                                    setImportResults((prev) => ({ ...prev, [file.name]: "importing" }));
+                                    try {
+                                      const existing = await getNoteBySignature(file.signature).catch(() => null);
+                                      if (existing) {
+                                        setImportResults((prev) => ({ ...prev, [file.name]: "done" }));
+                                        return;
+                                      }
+                                      const savedPath: string = await invoke("usb_download_and_save", {
+                                        name: file.name,
+                                        length: file.size,
+                                      });
+                                      await addNote({
+                                        filename: file.name,
+                                        filePath: savedPath,
+                                        signature: file.signature,
+                                        title: file.name.replace(/\.(hda|wav)$/i, ""),
+                                        durationMs: file.durationMs,
+                                        createdAt: Date.now(),
+                                        recordedAt: file.recordedAt,
+                                        language: null,
+                                        state: "imported" as NoteState,
+                                        hinotesId: null,
+                                        folderId: null,
+                                        tags: [],
+                                        sentimentPositive: null,
+                                        sentimentNeutral: null,
+                                        sentimentNegative: null,
+                                      });
+                                      setImportResults((prev) => ({ ...prev, [file.name]: "done" }));
+                                    } catch (err) {
+                                      console.error("Import failed for", file.name, err);
+                                      setImportResults((prev) => ({ ...prev, [file.name]: "error" }));
+                                    }
+                                  })();
+                                }}
+                                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors"
+                                style={{ background: t.acL, color: t.ac }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = t.ac, e.currentTarget.style.color = t.acT)}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = t.acL, e.currentTarget.style.color = t.ac)}
+                              >
+                                <Download className="h-3 w-3" />
+                                Transfer
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>
